@@ -1,0 +1,1070 @@
+<title>Starward</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap">
+<style>
+/* 単一の宇宙ゲーム画面。暗色固定のコックピットHUD。 */
+:root {
+  --void: #02040a;
+  --hud: #73e3ff;
+  --hud-dim: rgba(115, 227, 255, 0.38);
+  --amber: #ffcf4a;
+  --warp: #b49bff;
+  --alert: #ff5a46;
+  --ink: #e8f8ff;
+  --font-hud: "Chakra Petch", "Hiragino Sans", "Hiragino Kaku Gothic ProN", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html { height: 100%; box-sizing: border-box; background: var(--void); }
+body { height: 100%; margin: 0; overflow: hidden; background: var(--void); color: var(--ink); font-family: var(--font-hud); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+#wrap { position: relative; width: 100%; height: 100%; overflow: hidden; touch-action: none; }
+#gl, #hud { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#hud { touch-action: none; }
+#start {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 70% 40%, rgba(40, 70, 140, 0.35), rgba(2, 4, 10, 0.92) 60%);
+  padding-inline: 16px; z-index: 5;
+}
+.panel { max-width: 34rem; width: 100%; display: grid; gap: 14px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.32em; color: var(--hud); text-transform: uppercase; }
+h1 { margin: 0; font-size: clamp(40px, 9vw, 76px); font-weight: 700; letter-spacing: 0.08em; line-height: 0.95; color: var(--ink); text-wrap: balance; }
+h1 span { color: var(--hud); }
+.lede { margin: 0; font-size: 14px; line-height: 1.6; color: rgba(232, 248, 255, 0.75); }
+.bar { height: 4px; background: rgba(115, 227, 255, 0.15); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0%; background: var(--hud); transition: width 0.2s; }
+#start[hidden] { display: none; }
+#go {
+  justify-self: start; font: 600 18px var(--font-hud); letter-spacing: 0.2em; color: var(--void);
+  background: var(--hud); border: 0; border-radius: 999px; padding: 12px 34px; cursor: pointer;
+}
+#go:disabled { opacity: 0.35; cursor: default; }
+#go:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.keys { margin: 0; font-size: 12px; line-height: 1.7; color: rgba(232, 248, 255, 0.6); }
+.keys b { color: var(--hud); font-weight: 600; }
+@media (max-height: 420px) { .panel { gap: 8px; } h1 { font-size: 44px; } .lede { font-size: 13px; } }
+</style>
+
+<div id="wrap">
+  <canvas id="gl"></canvas>
+  <canvas id="hud"></canvas>
+  <div id="start">
+    <div class="panel">
+      <div class="eyebrow">Prototype · Flight Test</div>
+      <h1>STAR<span>WARD</span></h1>
+      <p class="lede">恒星ソルを中心とする7天体の星系を、宇宙船で自由に飛び回るプロトタイプです。着陸はできません。スタート地点の前方にはリングゲート10個のタイムアタックコースがあります。</p>
+      <div class="bar"><i id="prog"></i></div>
+      <button id="go" disabled>準備中…</button>
+      <p class="keys" id="keys"></p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script>
+'use strict';
+const TAU = Math.PI * 2;
+const V3 = THREE.Vector3, Q = THREE.Quaternion;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+const damp = (k, dt) => 1 - Math.exp(-k * dt);
+const mixc = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const hex = (h) => [((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255];
+
+const IS_TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0;
+
+// ===================== 調整用パラメータ =====================
+const CFG = {
+  maxSpeed: 300, boostMul: 2.5, reverse: 0.35, assistAccel: 160, thrustAccel: 120, strafeSpeed: 90,
+  throttleRate: 0.7, pitchRate: 1.5, yawRate: 1.1, rollRate: 2.6, rotResp: 5,
+  boostDrain: 0.22, boostRegen: 0.12, warpMax: 15000, warpSpool: 2, warpAccel: 6000,
+  mouseSens: 0.0022, deadzone: 0.05, stickExpo: 1.6, baseFov: 62,
+};
+
+// ===================== ノイズ =====================
+function h3(i, j, k) {
+  let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(k, 1274126177)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1103515245);
+  h ^= h >>> 16;
+  return (h & 0xffffff) / 16777215;
+}
+function vnoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const xf = x - xi, yf = y - yi, zf = z - zi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
+  const a = h3(xi, yi, zi), b = h3(xi + 1, yi, zi), c = h3(xi, yi + 1, zi), d = h3(xi + 1, yi + 1, zi);
+  const e = h3(xi, yi, zi + 1), f = h3(xi + 1, yi, zi + 1), g = h3(xi, yi + 1, zi + 1), hh = h3(xi + 1, yi + 1, zi + 1);
+  const x1 = a + (b - a) * u, x2 = c + (d - c) * u, x3 = e + (f - e) * u, x4 = g + (hh - g) * u;
+  const y1 = x1 + (x2 - x1) * v, y2 = x3 + (x4 - x3) * v;
+  return y1 + (y2 - y1) * w;
+}
+function fbm(x, y, z, oct) {
+  let s = 0, a = 0.5, n = 0;
+  for (let i = 0; i < oct; i++) { s += a * vnoise(x, y, z); n += a; x = x * 2.03 + 1.7; y = y * 2.03 + 9.2; z = z * 2.03 + 3.1; a *= 0.5; }
+  return s / n;
+}
+
+// ===================== 星系データ =====================
+// type: 0=地球型 2=ガス 3=氷 4=溶岩 5=岩石
+const PLANETS = [
+  { name: 'ヴァルカン', type: 4, radius: 700, orbit: 9000, angle: 2.4, orbitSpeed: 0.0008, spin: 0.02,
+    a: hex(0x1a120f), b: hex(0x472419), c: hex(0xff5a0d), atmo: 0xff6619, atmoStrength: 0.5, seed: 3, tex: 512 },
+  { name: 'アクア', type: 0, radius: 1000, orbit: 15000, angle: -0.5, orbitSpeed: 0.0005, spin: 0.012,
+    a: hex(0x082e80), b: hex(0xbfb380), c: hex(0x338040), sea: 0.62, clouds: true,
+    atmo: 0x59a6ff, atmoStrength: 1.1, seed: 11, tex: 512 },
+  { name: 'テラノヴァ', type: 0, radius: 1300, orbit: 22000, angle: 0.35, orbitSpeed: 0.0003, spin: 0.01,
+    a: hex(0x0a2b6b), b: hex(0x2e6124), c: hex(0x8c7354), sea: 0.5, clouds: true,
+    atmo: 0x66b3ff, atmoStrength: 1.0, seed: 27, tex: 1024 },
+  { name: 'ジュピタス', type: 2, radius: 4200, orbit: 46000, angle: 0.9, orbitSpeed: 0.0001, spin: 0.006,
+    a: hex(0xc79e75), b: hex(0x8c5438), c: hex(0xebe0c7), atmo: 0xe6bf8c, atmoStrength: 0.7, seed: 5, rings: true, tex: 1024 },
+  { name: 'グレイシア', type: 3, radius: 1100, orbit: 64000, angle: 0.15, orbitSpeed: 0.00008, spin: 0.008,
+    a: hex(0xb3d1eb), b: hex(0x3373b3), c: hex(0xf2f7ff), atmo: 0x99d9ff, atmoStrength: 0.6, seed: 41, tex: 512 },
+  { name: 'ルナリス', parent: 'テラノヴァ', type: 5, radius: 320, orbit: 4200, angle: 2.0, orbitSpeed: 0.01, spin: 0.01,
+    a: hex(0x595755), b: hex(0x9c948c), c: hex(0xd9d9d9), seed: 7, tex: 512 },
+];
+const SUN_RADIUS = 3000, BELT_INNER = 29000, BELT_OUTER = 33000, BELT_COUNT = 1600;
+const GATE_COUNT = 10, GATE_RADIUS = 40;
+
+// ===================== レンダラー =====================
+const glCanvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, IS_TOUCH ? 1.5 : 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x010208);
+const camera = new THREE.PerspectiveCamera(CFG.baseFov, 1, 0.3, 2e6);
+scene.add(camera);
+
+scene.add(new THREE.AmbientLight(0x1c2233, 1.0));
+const sunLight = new THREE.PointLight(0xfff5e6, 1.6, 0, 0);
+scene.add(sunLight);
+
+function canvasTex(cv) { const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = 4; return t; }
+function glowTexture(inner, outer) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+  const g = cv.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, inner); gr.addColorStop(0.25, outer); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return canvasTex(cv);
+}
+const GLOW_WHITE = glowTexture('rgba(255,255,255,1)', 'rgba(255,255,255,0.35)');
+
+// ---------- 星空 ----------
+const sky = new THREE.Group();
+scene.add(sky);
+(function buildStars() {
+  const make = (n, size, bandBias, bright) => {
+    const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    const bandN = new V3(0.3, 1, 0.2).normalize(); const v = new V3();
+    for (let i = 0; i < n; i++) {
+      v.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1);
+      if (v.lengthSq() > 1 || v.lengthSq() < 0.01) { i--; continue; }
+      v.normalize();
+      if (Math.random() < bandBias) { v.addScaledVector(bandN, -v.dot(bandN) * (0.85 + Math.random() * 0.15)).normalize(); }
+      pos.set([v.x * 900000, v.y * 900000, v.z * 900000], i * 3);
+      const t = Math.random(), b = bright * (0.35 + Math.random() * 0.65);
+      const c = mixc([0.7, 0.8, 1.0], [1.0, 0.85, 0.65], t);
+      col.set([c[0] * b, c[1] * b, c[2] * b], i * 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const m = new THREE.PointsMaterial({ size, sizeAttenuation: false, vertexColors: true, depthWrite: false, fog: false });
+    const p = new THREE.Points(g, m); p.renderOrder = -10; sky.add(p);
+  };
+  make(4500, 1.4, 0.45, 0.9);
+  make(500, 2.4, 0.2, 1.0);
+  // 星雲
+  const nebCols = [0x5a1a73, 0x0d4073, 0x30205a, 0x123a5a];
+  const bandN = new V3(0.3, 1, 0.2).normalize();
+  for (let i = 0; i < 14; i++) {
+    const v = new V3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
+    v.addScaledVector(bandN, -v.dot(bandN) * 0.9).normalize();
+    const sm = new THREE.SpriteMaterial({ map: GLOW_WHITE, color: nebCols[i % 4], transparent: true, opacity: 0.14 + Math.random() * 0.12, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const s = new THREE.Sprite(sm); s.position.copy(v.multiplyScalar(850000)); s.scale.setScalar(250000 + Math.random() * 350000);
+    s.renderOrder = -11; sky.add(s);
+  }
+})();
+
+// ---------- 大気シェーダー ----------
+const ATMO_VS = `
+#include <common>
+#include <logdepthbuf_pars_vertex>
+varying vec3 vN; varying vec3 vP;
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vP = wp.xyz; vN = normalize(mat3(modelMatrix) * normal);
+  gl_Position = projectionMatrix * viewMatrix * wp;
+  #include <logdepthbuf_vertex>
+}`;
+const ATMO_FS = `
+#include <common>
+#include <logdepthbuf_pars_fragment>
+uniform vec3 color; uniform float strength;
+varying vec3 vN; varying vec3 vP;
+void main() {
+  #include <logdepthbuf_fragment>
+  vec3 n = normalize(vN); vec3 v = normalize(cameraPosition - vP); vec3 l = normalize(-vP);
+  float rim = 1.0 - clamp(dot(n, v), 0.0, 1.0);
+  float lit = smoothstep(-0.35, 0.5, dot(n, l));
+  float a = pow(rim, 2.2) * lit * strength;
+  gl_FragColor = vec4(color * a * 1.4, 1.0);
+}`;
+
+// ---------- 天体テクスチャ生成 ----------
+function shade(p, x, y, z, out) {
+  const sc = 2.5, s = p.seed;
+  const px = x * sc + s, py = y * sc + s, pz = z * sc + s;
+  let col, em = null;
+  if (p.type === 0) {
+    const h = fbm(px, py, pz, 5), sea = p.sea;
+    if (h < sea) col = mixc(mixc([0, 0, 0], p.a, 0.45), p.a, smooth(sea - 0.25, sea, h));
+    else col = mixc(p.b, p.c, smooth(sea, sea + 0.22, h));
+    const lat = Math.abs(y) + (h - 0.5) * 0.2;
+    col = mixc(col, [0.92, 0.95, 1.0], smooth(0.8, 0.88, lat));
+  } else if (p.type === 2) {
+    const warp = fbm(px, py * 3, pz, 4);
+    const yv = y * 9 + warp * 3;
+    const b1 = Math.sin(yv) * 0.5 + 0.5, b2 = Math.sin(yv * 2.7 + 1.3) * 0.5 + 0.5;
+    col = mixc(mixc(p.a, p.b, b1), p.c, b2 * 0.5);
+    const sx = x - 0.8, sy = y + 0.35, sz2 = z - 0.5; const sd = Math.sqrt(sx * sx + sy * sy + sz2 * sz2) / 1.05;
+    col = mixc(col, [p.b[0] * 0.8 + 0.15, p.b[1] * 0.8 + 0.02, p.b[2] * 0.8], smooth(0.18, 0.08, sd + warp * 0.05));
+  } else if (p.type === 3) {
+    const h = fbm(px, py, pz, 5);
+    const ridge = 1 - Math.abs(fbm(px * 2 + 3, py * 2 + 3, pz * 2 + 3, 4) * 2 - 1);
+    col = mixc(mixc(p.a, p.c, h), p.b, smooth(0.86, 0.96, ridge));
+  } else if (p.type === 4) {
+    const h = fbm(px, py, pz, 5);
+    const ridge = 1 - Math.abs(fbm(px * 1.5 + 7, py * 1.5 + 7, pz * 1.5 + 7, 5) * 2 - 1);
+    const crack = smooth(0.84, 0.96, ridge);
+    col = mixc(mixc(p.a, p.b, h), [p.c[0] * 0.3, p.c[1] * 0.3, p.c[2] * 0.3], crack);
+    em = [p.c[0] * crack, p.c[1] * crack, p.c[2] * crack];
+  } else {
+    const h = fbm(px, py, pz, 5), cr = fbm(px * 3, py * 3, pz * 3, 3);
+    col = mixc(p.a, p.b, h);
+    const k = 0.75 + 0.5 * smooth(0.35, 0.65, cr);
+    col = [col[0] * k, col[1] * k, col[2] * k];
+  }
+  out.col = col; out.em = em;
+  if (p.clouds) {
+    const q = 1.6 * sc;
+    const qx = x * q + s * 2, qy = y * q + s * 2, qz = z * q + s * 2;
+    const w = fbm(qx * 1.5, qy * 1.5, qz * 1.5, 3);
+    out.cloud = smooth(0.5, 0.72, fbm(qx + w, qy + w, qz + w, 4)) * 0.9;
+  }
+}
+
+async function genPlanetTextures(p, onRow) {
+  const W = p.tex, H = p.tex / 2;
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const cv = mk(), g = cv.getContext('2d'), img = g.createImageData(W, H), d = img.data;
+  let ecv, eg, eimg, ed, ccv, cg, cimg, cd;
+  if (p.type === 4) { ecv = mk(); eg = ecv.getContext('2d'); eimg = eg.createImageData(W, H); ed = eimg.data; }
+  if (p.clouds) { ccv = mk(); cg = ccv.getContext('2d'); cimg = cg.createImageData(W, H); cd = cimg.data; }
+  const out = {};
+  for (let py = 0; py < H; py++) {
+    const th = (py + 0.5) / H * Math.PI, st = Math.sin(th), ct = Math.cos(th);
+    for (let px = 0; px < W; px++) {
+      const ph = (px + 0.5) / W * TAU;
+      shade(p, -Math.cos(ph) * st, ct, Math.sin(ph) * st, out);
+      const i = (py * W + px) * 4;
+      d[i] = out.col[0] * 255; d[i + 1] = out.col[1] * 255; d[i + 2] = out.col[2] * 255; d[i + 3] = 255;
+      if (ed) { ed[i] = out.em[0] * 255; ed[i + 1] = out.em[1] * 255; ed[i + 2] = out.em[2] * 255; ed[i + 3] = 255; }
+      if (cd) { cd[i] = 255; cd[i + 1] = 255; cd[i + 2] = 255; cd[i + 3] = out.cloud * 255; }
+    }
+    if (py % 16 === 15) { onRow(16 * W); await new Promise(r => setTimeout(r, 0)); }
+  }
+  g.putImageData(img, 0, 0);
+  if (eg) eg.putImageData(eimg, 0, 0);
+  if (cg) cg.putImageData(cimg, 0, 0);
+  return { map: canvasTex(cv), emissive: ecv ? canvasTex(ecv) : null, clouds: ccv ? canvasTex(ccv) : null };
+}
+
+// ---------- 天体 ----------
+const bodies = [];
+const findBody = (n) => bodies.find(b => b.name === n);
+
+function buildSun() {
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
+  const g = cv.getContext('2d'); const img = g.createImageData(256, 128);
+  for (let py = 0; py < 128; py++) for (let px = 0; px < 256; px++) {
+    const th = (py + 0.5) / 128 * Math.PI, ph = (px + 0.5) / 256 * TAU;
+    const x = -Math.cos(ph) * Math.sin(th), y = Math.cos(th), z = Math.sin(ph) * Math.sin(th);
+    const n = fbm(x * 6, y * 6, z * 6, 4) * 0.7 + fbm(x * 20, y * 20, z * 20, 2) * 0.3;
+    const c = mixc([1.0, 0.55, 0.15], [1.0, 0.97, 0.82], smooth(0.35, 0.65, n));
+    const i = (py * 256 + px) * 4; img.data[i] = c[0] * 255; img.data[i + 1] = c[1] * 255; img.data[i + 2] = c[2] * 255; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const sun = new THREE.Group();
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(SUN_RADIUS, 64, 32), new THREE.MeshBasicMaterial({ map: canvasTex(cv) }));
+  sun.add(mesh);
+  for (const [scale, col, op] of [[SUN_RADIUS * 4.2, 0xffd28a, 0.9], [SUN_RADIUS * 9, 0xff8a3a, 0.45]]) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, color: col, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false }));
+    s.scale.setScalar(scale); sun.add(s);
+  }
+  scene.add(sun);
+  bodies.push({ name: '太陽 ソル', node: sun, surf: mesh, radius: SUN_RADIUS, orbit: 0, angle: 0, orbitSpeed: 0, spin: 0.002 });
+}
+
+function buildRings(p, root) {
+  const inner = p.radius * 1.25, outer = p.radius * 2.45;
+  const geo = new THREE.RingGeometry(inner, outer, 128, 1);
+  const pos = geo.attributes.position, uv = geo.attributes.uv;
+  for (let i = 0; i < pos.count; i++) {
+    const r = Math.hypot(pos.getX(i), pos.getY(i));
+    uv.setXY(i, (r - inner) / (outer - inner), 0.5);
+  }
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 1;
+  const g = cv.getContext('2d'); const img = g.createImageData(512, 1);
+  for (let x = 0; x < 512; x++) {
+    const t = x / 511;
+    const bands = vnoise(t * 60, 0, 0) * 0.6 + vnoise(t * 200, 3, 0) * 0.4;
+    const gap = smooth(0.02, 0, Math.abs(t - 0.62));
+    const a = bands * smooth(0, 0.05, t) * smooth(1, 0.9, t) * (1 - gap);
+    const k = 0.6 + bands * 0.5;
+    img.data.set([217 * k, 191 * k, 153 * k, clamp(a * 0.85, 0, 1) * 255], x * 4);
+  }
+  g.putImageData(img, 0, 0);
+  const tex = canvasTex(cv);
+  const ring = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, roughness: 1, depthWrite: false }));
+  ring.rotation.set(-Math.PI / 2 + 0.21, 0, 0.14);
+  root.add(ring);
+}
+
+async function buildPlanets(progress) {
+  const total = PLANETS.reduce((s, p) => s + p.tex * p.tex / 2, 0);
+  let done = 0;
+  for (const p of PLANETS) {
+    const tex = await genPlanetTextures(p, (n) => { done += n; progress(done / total); });
+    const root = new THREE.Group(); scene.add(root);
+    const mat = new THREE.MeshStandardMaterial({ map: tex.map, roughness: 0.92, metalness: 0 });
+    if (tex.emissive) { mat.emissiveMap = tex.emissive; mat.emissive = new THREE.Color(0xffffff); mat.emissiveIntensity = 1.4; }
+    const surf = new THREE.Mesh(new THREE.SphereGeometry(p.radius, 96, 48), mat);
+    surf.rotation.z = (Math.random() - 0.5) * 0.6;
+    root.add(surf);
+    let clouds = null;
+    if (tex.clouds) {
+      clouds = new THREE.Mesh(new THREE.SphereGeometry(p.radius * 1.012, 96, 48), new THREE.MeshStandardMaterial({ map: tex.clouds, transparent: true, roughness: 1, depthWrite: false }));
+      surf.add(clouds); clouds.scale.setScalar(1);
+    }
+    if (p.atmo) {
+      const am = new THREE.ShaderMaterial({ vertexShader: ATMO_VS, fragmentShader: ATMO_FS, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+        uniforms: { color: { value: new THREE.Color(p.atmo) }, strength: { value: p.atmoStrength } } });
+      root.add(new THREE.Mesh(new THREE.SphereGeometry(p.radius * 1.07, 64, 32), am));
+    }
+    if (p.rings) buildRings(p, root);
+    bodies.push({ name: p.name, node: root, surf, clouds, radius: p.radius, orbit: p.orbit, angle: p.angle, orbitSpeed: p.orbitSpeed, spin: p.spin, parent: p.parent || '' });
+  }
+}
+
+function updateOrbits(dt) {
+  for (const b of bodies) {
+    if (b.surf) b.surf.rotation.y += b.spin * dt;
+    if (b.clouds) b.clouds.rotation.y += 0.004 * dt;
+    if (!b.orbit) continue;
+    b.angle += b.orbitSpeed * dt;
+    const c = b.parent ? findBody(b.parent).node.position : new V3();
+    b.node.position.set(c.x + Math.cos(b.angle) * b.orbit, c.y, c.z + Math.sin(b.angle) * b.orbit);
+  }
+}
+
+function nearestBody(p) {
+  let best = null, bd = Infinity;
+  for (const b of bodies) { const d = p.distanceTo(b.node.position) - b.radius; if (d < bd) { bd = d; best = b; } }
+  return best ? { body: best, surface: bd } : null;
+}
+
+// ---------- 小惑星 ----------
+const astPos = [], astRad = [];
+function buildAsteroids(startPos) {
+  const geo = new THREE.IcosahedronGeometry(1, 1);
+  const pa = geo.attributes.position, v = new V3();
+  for (let i = 0; i < pa.count; i++) {
+    v.fromBufferAttribute(pa, i).normalize();
+    const d = 1 + (vnoise(v.x * 1.8 + 5, v.y * 1.8 + 5, v.z * 1.8 + 5) - 0.5) * 0.9;
+    pa.setXYZ(i, v.x * d, v.y * d, v.z * d);
+  }
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x6b615a, roughness: 0.95, flatShading: true });
+  let seed = 2026; const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) | 0; return ((seed >>> 0) / 4294967296); };
+  const gauss = () => { let u = 0; for (let i = 0; i < 3; i++) u += rnd(); return (u - 1.5) / 0.5; };
+  const xf = [];
+  const add = (pos, s) => {
+    const scl = new V3(lerp(0.7, 1.3, rnd()), lerp(0.6, 1.1, rnd()), lerp(0.7, 1.4, rnd())).multiplyScalar(s);
+    const q = new Q().setFromEuler(new THREE.Euler(rnd() * TAU, rnd() * TAU, rnd() * TAU));
+    xf.push(new THREE.Matrix4().compose(pos, q, scl));
+    astPos.push(pos); astRad.push((scl.x + scl.y + scl.z) / 3 * 0.95);
+  };
+  for (let i = 0; i < BELT_COUNT; i++) {
+    const a = rnd() * TAU, r = lerp(BELT_INNER, BELT_OUTER, rnd());
+    add(new V3(Math.cos(a) * r, gauss() * 350, Math.sin(a) * r), rnd() > 0.05 ? lerp(15, 140, rnd()) : lerp(200, 400, rnd()));
+  }
+  const cl = startPos.clone().add(new V3(2600, 0, -2200));
+  for (let i = 0; i < 220; i++) add(cl.clone().add(new V3(gauss(), gauss() * 0.5, gauss()).multiplyScalar(700)), lerp(6, 60, rnd()));
+  const im = new THREE.InstancedMesh(geo, mat, xf.length);
+  xf.forEach((m, i) => im.setMatrixAt(i, m));
+  im.frustumCulled = false;
+  scene.add(im);
+}
+function collideAsteroids(p, r, cb) {
+  for (let i = 0; i < astPos.length; i++) {
+    const rr = astRad[i] + r;
+    if (p.distanceToSquared(astPos[i]) < rr * rr) cb(astPos[i], astRad[i]);
+  }
+}
+
+// ---------- ゲートコース ----------
+const gates = [];
+const G = { index: 0, time: 0, best: 0, running: false, finished: false, prevSide: 0 };
+function buildGates(startPos) {
+  let seed = 77; const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) | 0; return ((seed >>> 0) / 4294967296); };
+  const pos = startPos.clone().add(new V3(0, 0, -350));
+  const dir = new V3(0.25, 0.15, -1).normalize();
+  const geo = new THREE.TorusGeometry(GATE_RADIUS, 3, 10, 48);
+  for (let i = 0; i < GATE_COUNT; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0x444444 });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.copy(pos);
+    m.quaternion.setFromUnitVectors(new V3(0, 0, 1), dir);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, color: 0xff8a26, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.scale.setScalar(GATE_RADIUS * 3.2); m.add(glow);
+    scene.add(m);
+    gates.push({ mesh: m, mat, glow, normal: dir.clone() });
+    dir.applyAxisAngle(new V3(0, 1, 0), (rnd() - 0.5) * 1.2);
+    const side = new V3().crossVectors(dir, new V3(0, 1, 0)).normalize();
+    dir.applyAxisAngle(side, (rnd() - 0.5) * 0.7).normalize();
+    pos.addScaledVector(dir, lerp(380, 520, rnd()));
+  }
+}
+function gateSide(i) { if (i >= gates.length) return 0; const g = gates[i]; return ship.pos.clone().sub(g.mesh.position).dot(g.normal); }
+function resetGates() { G.index = 0; G.time = 0; G.running = false; G.finished = false; G.prevSide = gateSide(0); refreshGates(); }
+function refreshGates() {
+  gates.forEach((g, i) => {
+    let c = 0x40404c, glow = 0;
+    if (i < G.index) c = 0x33ff66;
+    else if (i === G.index) { c = 0xff8c26; glow = 0.55; }
+    else if (i === G.index + 1) c = 0x8a5a26;
+    g.mat.color.setHex(c); g.glow.material.opacity = glow;
+  });
+}
+function updateGates(dt) {
+  if (G.running) G.time += dt;
+  if (G.finished || G.index >= gates.length) return;
+  const g = gates[G.index];
+  let side = gateSide(G.index);
+  if (G.prevSide < 0 && side >= 0) {
+    const rel = ship.pos.clone().sub(g.mesh.position);
+    const radial = rel.addScaledVector(g.normal, -rel.dot(g.normal));
+    if (radial.length() < GATE_RADIUS) {
+      if (G.index === 0) { G.running = true; G.time = 0; }
+      G.index++; cam.shake += 0.15;
+      if (G.index >= gates.length) {
+        G.running = false; G.finished = true;
+        if (G.best <= 0 || G.time < G.best) { G.best = G.time; showMsg(`コース完走！ 新記録 ${G.time.toFixed(2)} 秒`, 4); }
+        else showMsg(`コース完走！ ${G.time.toFixed(2)} 秒`, 4);
+      }
+      refreshGates(); side = gateSide(G.index);
+    }
+  }
+  G.prevSide = side;
+}
+
+// ===================== 宇宙船 =====================
+const ship = {
+  pos: new V3(), quat: new Q(), vel: new V3(), ang: new V3(), throttle: 0, boostE: 1, boostAmt: 0, boosting: false,
+  fa: true, warp: 0, warpT: 0, warpSpeed: 0, warpAmt: 0, steer: { x: 0, y: 0 }, touchSteer: { x: 0, y: 0 },
+  invertY: false, aligning: false, radius: 6,
+};
+const shipModel = new THREE.Group();
+scene.add(shipModel);
+const engine = { flames: [], glowMats: [], navs: [], light: null, len: 0, col: new THREE.Color(0x4dccff), t: 0 };
+
+function buildShipModel() {
+  const hull = new THREE.MeshStandardMaterial({ color: 0xd1d9e6, metalness: 0.35, roughness: 0.4 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1f2128, metalness: 0.5, roughness: 0.5 });
+  const accent = new THREE.MeshBasicMaterial({ color: 0x4de6ff });
+  const canopy = new THREE.MeshStandardMaterial({ color: 0x0a1f33, metalness: 0.8, roughness: 0.08, emissive: 0x0d3550 });
+  const part = (geo, mat, pos, rot, scl, parent = shipModel) => {
+    const m = new THREE.Mesh(geo, mat); m.position.set(...pos); m.rotation.order = 'YXZ';
+    m.rotation.set(rot[0] * Math.PI / 180, rot[1] * Math.PI / 180, rot[2] * Math.PI / 180); m.scale.set(...scl); parent.add(m); return m;
+  };
+  part(new THREE.CapsuleGeometry(1.1, 7.8, 8, 16), hull, [0, 0, 0.5], [90, 0, 0], [1.3, 1, 0.65]);
+  part(new THREE.CylinderGeometry(0, 1, 4, 16), hull, [0, 0, -6.4], [-90, 0, 0], [1.2, 1, 0.55]);
+  part(new THREE.SphereGeometry(0.8, 16, 12), canopy, [0, 0.55, -3.0], [0, 0, 0], [0.8, 0.55, 2.0]);
+  for (const side of [-1, 1]) {
+    const wing = part(new THREE.BoxGeometry(5.5, 0.18, 2.6), hull, [3.4 * side, -0.1, 1.8], [0, -18 * side, -6 * side], [1, 1, 1]);
+    part(new THREE.BoxGeometry(5.0, 0.08, 0.14), accent, [0.2 * side, 0.06, -1.25], [0, 0, 0], [1, 1, 1], wing);
+    part(new THREE.BoxGeometry(4.0, 0.1, 1.6), dark, [-0.4 * side, -0.1, 0.3], [0, 0, 0], [1, 1, 1], wing);
+    part(new THREE.BoxGeometry(0.15, 1.9, 2.2), hull, [1.25 * side, 1.0, 4.0], [-20, 0, -18 * side], [1, 1, 1]);
+    part(new THREE.CylinderGeometry(0.55, 0.6, 4.2, 16), dark, [1.6 * side, 0, 4.2], [90, 0, 0], [1, 1, 1]);
+    part(new THREE.CylinderGeometry(0.62, 0.66, 0.3, 16), accent, [1.6 * side, 0, 3.0], [90, 0, 0], [1, 1, 1]);
+    const gm = new THREE.MeshBasicMaterial({ color: 0x4dccff });
+    engine.glowMats.push(gm);
+    part(new THREE.CylinderGeometry(0.45, 0.45, 0.05, 16), gm, [1.6 * side, 0, 6.32], [90, 0, 0], [1, 1, 1]);
+    // 噴射炎（外炎・内炎）
+    const flame = new THREE.Group(); flame.position.set(1.6 * side, 0, 6.35); shipModel.add(flame);
+    for (const [r, op, white] of [[0.45, 0.55, false], [0.22, 0.9, true]]) {
+      const cg = new THREE.ConeGeometry(r, 1, 14, 1, true); cg.translate(0, -0.5, 0); cg.rotateX(-Math.PI / 2);
+      const fm = new THREE.MeshBasicMaterial({ color: white ? 0xffffff : 0x4dccff, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const fmesh = new THREE.Mesh(cg, fm); flame.add(fmesh);
+      if (!white) engine.glowMats.push(fm);
+    }
+    const fg = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, color: 0x4dccff, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+    fg.position.set(1.6 * side, 0, 6.5); fg.scale.setScalar(3); shipModel.add(fg); engine.glowMats.push(fg.material);
+    engine.flames.push(flame);
+    const nav = new THREE.MeshBasicMaterial({ color: side < 0 ? 0xff2020 : 0x20ff40 });
+    part(new THREE.SphereGeometry(0.15, 8, 6), nav, [6.0 * side, -0.1, 2.65], [0, 0, 0], [1, 1, 1]);
+    const ns = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, color: side < 0 ? 0xff3030 : 0x30ff50, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    ns.position.set(6.0 * side, -0.1, 2.65); ns.scale.setScalar(2.2); shipModel.add(ns); engine.navs.push(ns.material);
+  }
+  engine.light = new THREE.PointLight(0x4dccff, 1, 22, 2); engine.light.position.set(0, 0, 8); shipModel.add(engine.light);
+}
+const C_NORMAL = new THREE.Color(0x4dccff), C_BOOST = new THREE.Color(0xff8c33), C_WARP = new THREE.Color(0x9a66ff);
+function updateEngine(dt) {
+  engine.t += dt;
+  const target = 0.4 + Math.max(ship.throttle, 0) * 3 + ship.boostAmt * 4 + ship.warpAmt * 10;
+  engine.len = lerp(engine.len, target, damp(10, dt));
+  const tc = C_NORMAL.clone().lerp(C_BOOST, ship.boostAmt).lerp(C_WARP, ship.warpAmt);
+  engine.col.lerp(tc, damp(6, dt));
+  engine.flames.forEach((f, i) => {
+    const fl = 1 + Math.sin(engine.t * 47 + i * 2) * 0.06;
+    f.scale.set(1 + ship.boostAmt * 0.3, 1 + ship.boostAmt * 0.3, engine.len * fl);
+  });
+  engine.glowMats.forEach(m => m.color.copy(engine.col));
+  engine.light.color.copy(engine.col);
+  engine.light.intensity = 0.6 + Math.max(ship.throttle, 0) * 1.5 + ship.boostAmt * 2 + ship.warpAmt * 3;
+  const blink = (engine.t % 1.2) < 0.12 ? 1 : 0;
+  engine.navs.forEach(m => m.opacity = blink);
+}
+
+// ---------- 入力 ----------
+const keys = new Set();
+const touchHeld = new Map();  // action -> count
+const KEYMAP = {
+  throttle_up: ['KeyW'], throttle_down: ['KeyS'], roll_left: ['KeyA'], roll_right: ['KeyD'],
+  strafe_left: ['KeyQ'], strafe_right: ['KeyE'], strafe_up: ['Space'], strafe_down: ['ControlLeft', 'ControlRight'],
+  pitch_up: ['ArrowUp'], pitch_down: ['ArrowDown'], yaw_left: ['ArrowLeft'], yaw_right: ['ArrowRight'],
+  boost: ['ShiftLeft', 'ShiftRight'], align: ['KeyY'],
+};
+const held = (a) => (touchHeld.get(a) || 0) > 0 || (KEYMAP[a] || []).some(k => keys.has(k));
+const axis = (neg, pos) => (held(pos) ? 1 : 0) - (held(neg) ? 1 : 0);
+
+const UI = { touch: IS_TOUCH, help: !IS_TOUCH, started: false, msg: '', msgT: 0 };
+function showMsg(t, d = 2.5) { UI.msg = t; UI.msgT = d; }
+
+function tapAction(a) {
+  switch (a) {
+    case 'warp': toggleWarp(); break;
+    case 'flight_assist': ship.fa = !ship.fa; showMsg('フライトアシスト: ' + (ship.fa ? 'ON' : 'OFF（慣性飛行）')); break;
+    case 'camera_mode': cam.mode = (cam.mode + 1) % 3; shipModel.visible = cam.mode !== 2; showMsg(['追従カメラ', '遠景カメラ', 'コックピット'][cam.mode], 1.5); break;
+    case 'target_next': targetIndex = (targetIndex + 1) % bodies.length; showMsg('ターゲット: ' + bodies[targetIndex].name, 1.5); break;
+    case 'throttle_zero': ship.throttle = 0; break;
+    case 'recenter': ship.steer.x = ship.steer.y = 0; break;
+    case 'invert_y': ship.invertY = !ship.invertY; showMsg('上下反転: ' + (ship.invertY ? 'ON' : 'OFF')); break;
+    case 'help': UI.help = !UI.help; break;
+    case 'reset': resetShip(); resetGates(); showMsg('リスタート', 1.5); break;
+    case 'touch_ui': UI.touch = !UI.touch; releaseTouches(); if (UI.touch && document.exitPointerLock) document.exitPointerLock(); showMsg('タッチ操作: ' + (UI.touch ? 'ON' : 'OFF'), 1.5); break;
+  }
+}
+const KEY_TAPS = { Tab: 'warp', KeyZ: 'flight_assist', KeyC: 'camera_mode', KeyT: 'target_next', KeyX: 'throttle_zero', KeyV: 'recenter', KeyI: 'invert_y', KeyH: 'help', Backspace: 'reset', KeyG: 'touch_ui' };
+addEventListener('keydown', (e) => {
+  if (!UI.started) return;
+  if (KEY_TAPS[e.code] || KEYMAP.boost.includes(e.code) || e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+  if (!e.repeat && KEY_TAPS[e.code]) tapAction(KEY_TAPS[e.code]);
+  keys.add(e.code);
+});
+addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('blur', () => { keys.clear(); releaseTouches(); });
+
+// ---------- 飛行 ----------
+let targetIndex = 0;
+const startXf = { pos: new V3(), quat: new Q() };
+function resetShip() {
+  ship.pos.copy(startXf.pos); ship.quat.copy(startXf.quat); ship.vel.set(0, 0, 0); ship.ang.set(0, 0, 0);
+  ship.throttle = 0; ship.boostE = 1; ship.warp = 0; ship.warpSpeed = 0; ship.steer.x = ship.steer.y = 0;
+  cam.init = false;
+}
+const tmpQ = new Q(), AX = new V3(1, 0, 0), AY = new V3(0, 1, 0), AZ = new V3(0, 0, 1);
+const fwdOf = (q) => new V3(0, 0, -1).applyQuaternion(q);
+
+function readRotationInput() {
+  let pitch = 0, yaw = 0;
+  let s = ship.steer, l = Math.hypot(s.x, s.y), sx = 0, sy = 0;
+  if (l >= CFG.deadzone) { const k = (l - CFG.deadzone) / (1 - CFG.deadzone) / l; sx = s.x * k; sy = s.y * k; }
+  pitch = -sy - ship.touchSteer.y; yaw = -sx - ship.touchSteer.x;
+  pitch += axis('pitch_down', 'pitch_up'); yaw += axis('yaw_right', 'yaw_left');
+  const roll = axis('roll_right', 'roll_left');
+  if (ship.invertY) pitch = -pitch;
+  ship.aligning = held('align');
+  if (ship.aligning) {
+    const dir = bodies[targetIndex].node.position.clone().sub(ship.pos).normalize();
+    const local = dir.applyQuaternion(ship.quat.clone().invert());
+    pitch = clamp(local.y * 4, -1, 1); yaw = clamp(-local.x * 4, -1, 1);
+    if (local.z > 0) yaw = Math.abs(local.x) > 0.01 ? Math.sign(-local.x) : 1;
+  }
+  return [clamp(pitch, -1, 1), clamp(yaw, -1, 1), clamp(roll, -1, 1)];
+}
+
+function toggleWarp() {
+  if (ship.warp !== 0) { exitWarp('ワープ解除'); return; }
+  const n = nearestBody(ship.pos);
+  if (n && n.surface < n.body.radius) { showMsg(`ワープ不可: ${n.body.name} の重力圏内`); return; }
+  ship.warp = 1; ship.warpT = 0; showMsg('ワープドライブ充填中…');
+}
+function exitWarp(msg) {
+  const was = ship.warp === 2;
+  ship.warp = 0; ship.warpSpeed = 0;
+  if (was) ship.vel.copy(fwdOf(ship.quat).multiplyScalar(CFG.maxSpeed * 1.5));
+  showMsg(msg);
+}
+function pushOut(center, r, bounce) {
+  const d = ship.pos.clone().sub(center), l = d.length();
+  if (l >= r || l < 0.001) return;
+  const n = d.divideScalar(l);
+  ship.pos.copy(center).addScaledVector(n, r);
+  const vn = ship.vel.dot(n);
+  if (vn < 0) {
+    ship.vel.addScaledVector(n, -vn * (1 + bounce)).multiplyScalar(0.8);
+    if (ship.warp !== 0) exitWarp('衝突によりワープ中断');
+    cam.shake = Math.min(cam.shake + clamp(-vn / 120, 0.1, 2), 2.5);
+    if (-vn > 60) showMsg(`衝突！ (${Math.round(-vn)} m/s)`, 1.5);
+  }
+}
+
+function updateShip(dt) {
+  const [pi, ya, ro] = readRotationInput();
+  // 回転
+  const rs = ship.warp === 2 ? 0.3 : 1;
+  ship.ang.lerp(new V3(pi * CFG.pitchRate * rs, ya * CFG.yawRate * rs, ro * CFG.rollRate * rs), damp(CFG.rotResp, dt));
+  ship.quat.multiply(tmpQ.setFromAxisAngle(AX, ship.ang.x * dt));
+  ship.quat.multiply(tmpQ.setFromAxisAngle(AY, ship.ang.y * dt));
+  ship.quat.multiply(tmpQ.setFromAxisAngle(AZ, ship.ang.z * dt));
+  ship.quat.normalize();
+  // スロットル・ブースト
+  ship.throttle = clamp(ship.throttle + axis('throttle_down', 'throttle_up') * CFG.throttleRate * dt, -CFG.reverse, 1);
+  const wantBoost = held('boost') && ship.throttle > 0 && ship.warp === 0;
+  if (wantBoost && ship.boostE > 0) { ship.boosting = true; ship.boostE = Math.max(ship.boostE - CFG.boostDrain * dt, 0); }
+  else { ship.boosting = false; if (!held('boost')) ship.boostE = Math.min(ship.boostE + CFG.boostRegen * dt, 1); }
+  // ワープ
+  if (ship.warp === 1) {
+    ship.warpT += dt;
+    if (ship.warpT >= CFG.warpSpool) { ship.warp = 2; ship.warpSpeed = Math.max(ship.vel.length(), CFG.maxSpeed); showMsg('ワープ！'); }
+  } else if (ship.warp === 2) {
+    const n = nearestBody(ship.pos);
+    let limit = CFG.warpMax;
+    if (n) {
+      limit = clamp(n.surface * 0.7, 400, CFG.warpMax);
+      if (n.surface < n.body.radius * 0.5) exitWarp(`重力井戸に捕捉 — ${n.body.name} 付近でワープ離脱`);
+    }
+    if (ship.warp === 2) {
+      if (ship.warpSpeed < limit) ship.warpSpeed = Math.min(ship.warpSpeed + CFG.warpAccel * dt, limit);
+      else ship.warpSpeed = lerp(ship.warpSpeed, limit, damp(5, dt));
+    }
+  }
+  // 並進
+  const fwd = fwdOf(ship.quat), right = AX.clone().applyQuaternion(ship.quat), up = AY.clone().applyQuaternion(ship.quat);
+  if (ship.warp === 2) {
+    ship.vel.copy(fwd).multiplyScalar(ship.warpSpeed);
+  } else {
+    const sx = axis('strafe_left', 'strafe_right'), sy = axis('strafe_down', 'strafe_up');
+    const cap = CFG.maxSpeed * (ship.boosting ? CFG.boostMul : 1);
+    if (ship.fa) {
+      const desired = fwd.clone().multiplyScalar(ship.throttle * cap).addScaledVector(right, sx * CFG.strafeSpeed).addScaledVector(up, sy * CFG.strafeSpeed);
+      let a = CFG.assistAccel * (ship.boosting ? 2 : 1);
+      if (ship.vel.length() > cap * 1.05) a *= 3;
+      const diff = desired.sub(ship.vel), dl = diff.length(), step = a * dt;
+      if (dl <= step) ship.vel.add(diff); else ship.vel.addScaledVector(diff, step / dl);
+    } else {
+      ship.vel.addScaledVector(fwd, ship.throttle * CFG.thrustAccel * (ship.boosting ? 2 : 1) * dt);
+      ship.vel.addScaledVector(right, sx * CFG.thrustAccel * 0.6 * dt).addScaledVector(up, sy * CFG.thrustAccel * 0.6 * dt);
+      if (ship.vel.length() > cap * 1.2) ship.vel.setLength(cap * 1.2);
+    }
+  }
+  ship.pos.addScaledVector(ship.vel, dt);
+  // 衝突
+  for (const b of bodies) pushOut(b.node.position, b.radius + ship.radius, 0.4);
+  if (ship.warp !== 2) collideAsteroids(ship.pos, ship.radius, (c, r) => pushOut(c, r + ship.radius, 0.5));
+
+  ship.boostAmt = lerp(ship.boostAmt, ship.boosting ? 1 : 0, damp(6, dt));
+  ship.warpAmt = lerp(ship.warpAmt, ship.warp === 2 ? clamp(ship.warpSpeed / 4000, 0, 1) : 0, damp(4, dt));
+  shipModel.position.copy(ship.pos); shipModel.quaternion.copy(ship.quat);
+  updateEngine(dt);
+}
+
+// ---------- カメラ ----------
+const cam = { mode: 0, shake: 0, q: new Q(), init: false };
+const CAM_OFF = [new V3(0, 3.4, 15), new V3(0, 8, 36), new V3(0, 0.95, -3.3)];
+const CAM_SMOOTH = [7, 4.5, 40];
+function updateCamera(dt) {
+  if (!cam.init) { cam.q.copy(ship.quat); cam.init = true; }
+  cam.q.slerp(ship.quat, damp(CAM_SMOOTH[cam.mode], dt));
+  const sr = clamp(ship.vel.length() / 750, 0, 1);
+  const off = CAM_OFF[cam.mode].clone();
+  if (cam.mode !== 2) off.z += sr * 3 + ship.boostAmt * 2;
+  const pos = ship.pos.clone().add(off.applyQuaternion(cam.q));
+  const s = cam.shake + (ship.warp === 1 ? 0.15 : 0) + ship.warpAmt * 0.05;
+  const up = AY.clone().applyQuaternion(cam.q);
+  if (s > 0) pos.add(new V3((Math.random() * 2 - 1) * s * 0.4, (Math.random() * 2 - 1) * s * 0.4, 0).applyQuaternion(cam.q));
+  cam.shake = Math.max(cam.shake - dt * 2.5, 0);
+  camera.position.copy(pos);
+  if (cam.mode === 2) camera.quaternion.copy(cam.q);
+  else { camera.up.copy(up); camera.lookAt(ship.pos.clone().add(new V3(0, 1.5, -40).applyQuaternion(cam.q))); }
+  const tf = CFG.baseFov + ship.boostAmt * 8 + ship.warpAmt * 26;
+  camera.fov = lerp(camera.fov, tf, damp(4, dt)); camera.updateProjectionMatrix();
+  sky.position.copy(camera.position);
+}
+
+// ---------- 宇宙塵 ----------
+const DUST_N = 360, DUST_EXT = 260;
+const dustPos = new Float32Array(DUST_N * 6), dustCol = new Float32Array(DUST_N * 6), dustPts = [];
+const dustGeo = new THREE.BufferGeometry();
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+dustGeo.setAttribute('color', new THREE.BufferAttribute(dustCol, 3));
+const dust = new THREE.LineSegments(dustGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+dust.frustumCulled = false; scene.add(dust);
+function initDust(c) { for (let i = 0; i < DUST_N; i++) dustPts.push(new V3((Math.random() * 2 - 1) * DUST_EXT, (Math.random() * 2 - 1) * DUST_EXT, (Math.random() * 2 - 1) * DUST_EXT).add(c)); }
+const wrap = (v, e) => ((v + e) % (2 * e) + 2 * e) % (2 * e) - e;
+function updateDust() {
+  const c = camera.position, spd = ship.vel.length();
+  const dir = spd > 1 ? ship.vel.clone().divideScalar(spd) : fwdOf(ship.quat);
+  const len = clamp(spd * 0.015, 0.5, 80);
+  for (let i = 0; i < DUST_N; i++) {
+    const p = dustPts[i];
+    p.set(wrap(p.x - c.x, DUST_EXT) + c.x, wrap(p.y - c.y, DUST_EXT) + c.y, wrap(p.z - c.z, DUST_EXT) + c.z);
+    const f = clamp(1 - p.distanceTo(c) / DUST_EXT, 0, 1) * 0.8;
+    const j = i * 6;
+    dustPos[j] = p.x; dustPos[j + 1] = p.y; dustPos[j + 2] = p.z;
+    dustPos[j + 3] = p.x - dir.x * len; dustPos[j + 4] = p.y - dir.y * len; dustPos[j + 5] = p.z - dir.z * len;
+    dustCol[j] = 0.75 * f; dustCol[j + 1] = 0.85 * f; dustCol[j + 2] = f;
+    dustCol[j + 3] = dustCol[j + 4] = dustCol[j + 5] = 0;
+  }
+  dustGeo.attributes.position.needsUpdate = true; dustGeo.attributes.color.needsUpdate = true;
+}
+
+// ===================== HUD =====================
+const hud = document.getElementById('hud');
+const ctx = hud.getContext('2d');
+let VW = 1, VH = 1, DPR = 1, S = 1;
+const COL = { main: 'rgba(115,227,255,0.92)', dim: 'rgba(115,227,255,0.38)', warn: 'rgba(255,90,70,0.95)', target: 'rgba(255,207,74,0.95)', gate: 'rgba(255,140,38,0.95)', pro: 'rgba(120,255,140,0.9)', warp: 'rgba(180,155,255,0.95)', fill: 'rgba(115,227,255,0.12)', active: 'rgba(115,227,255,0.45)', text: 'rgba(232,248,255,0.95)' };
+const FONT = '"Chakra Petch","Hiragino Sans","Hiragino Kaku Gothic ProN",system-ui,sans-serif';
+function text(x, y, s, size, col, align = 'left') {
+  ctx.font = `600 ${size}px ${FONT}`; ctx.textAlign = align; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(s, x + 1, y + 1);
+  ctx.fillStyle = col; ctx.fillText(s, x, y);
+}
+const fmtDist = (d) => d >= 1000 ? (d / 1000).toFixed(1) + ' km' : Math.round(d) + ' m';
+const fmtTime = (t) => t > 3600 ? '--:--' : `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+function circle(x, y, r, fill, stroke, lw = 2) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } }
+function line(x1, y1, x2, y2, col, lw = 2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke(); }
+
+function project(p) {
+  const v = p.clone().applyMatrix4(camera.matrixWorldInverse);
+  const behind = v.z > 0;
+  const n = p.clone().project(camera);
+  return { x: (n.x * 0.5 + 0.5) * VW, y: (-n.y * 0.5 + 0.5) * VH, behind, local: v };
+}
+function marker(p, label, col, dy = 0) {
+  const m = 34 * S, pr = project(p);
+  const on = !pr.behind && pr.x > m && pr.x < VW - m && pr.y > m && pr.y < VH - m;
+  if (on) {
+    const s = 12 * S;
+    for (const [cx, cy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const x = pr.x + cx * s, y = pr.y + cy * s;
+      line(x, y, x - cx * 5 * S, y, col); line(x, y, x, y - cy * 5 * S, col);
+    }
+    text(pr.x + 18 * S, pr.y - 4 * S + dy * S, label, 13 * S, col);
+  } else {
+    let dx = pr.local.x, dyy = -pr.local.y; const l = Math.hypot(dx, dyy) || 1; dx /= l; dyy /= l;
+    if (l < 0.001) { dx = 0; dyy = 1; }
+    const hx = VW / 2 - m, hy = VH / 2 - m;
+    const t = Math.min(hx / Math.max(Math.abs(dx), 1e-4), hy / Math.max(Math.abs(dyy), 1e-4));
+    const x = VW / 2 + dx * t, y = VH / 2 + dyy * t, px = -dyy, py = dx, k = S;
+    ctx.beginPath(); ctx.moveTo(x + dx * 13 * k, y + dyy * 13 * k); ctx.lineTo(x - dx * 6 * k + px * 8 * k, y - dyy * 6 * k + py * 8 * k); ctx.lineTo(x - dx * 6 * k - px * 8 * k, y - dyy * 6 * k - py * 8 * k); ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+    ctx.font = `600 ${12 * S}px ${FONT}`; const tw = ctx.measureText(label).width;
+    const lx = clamp(x - dx * 30 * k - tw / 2, 8, VW - tw - 8), ly = clamp(y - dyy * 30 * k + 4 + dy * S, 16, VH - 8);
+    text(lx, ly, label, 12 * S, col);
+  }
+}
+
+// ---------- タッチ操作 ----------
+const touches = new Map();  // pointerId -> {role, ox, oy, x, y}
+let buttons = [], slider = { x: 0, y: 0, w: 0, h: 0 };
+function layout() {
+  const s = S, w = VW, h = VH;
+  slider = { x: w - 16 - 44 * s, y: h * 0.3, w: 44 * s, h: h * 0.7 - 16 * s };
+  const bx = slider.x - 58 * s;
+  buttons = [
+    { id: 'boost', label: 'BOOST', x: bx, y: h - 50 * s, r: 36 * s, action: 'boost', hold: true },
+    { id: 'warp', label: 'WARP', x: bx, y: h - 138 * s, r: 28 * s, action: 'warp', hold: false },
+    { id: 'align', label: '自動旋回', x: bx - 82 * s, y: h - 42 * s, r: 28 * s, action: 'align', hold: true },
+    { id: 'roll_l', label: '↺', x: 16 + 26 * s, y: h - 168 * s, r: 23 * s, action: 'roll_left', hold: true },
+    { id: 'roll_r', label: '↻', x: 16 + 82 * s, y: h - 168 * s, r: 23 * s, action: 'roll_right', hold: true },
+    { id: 'up', label: '▲', x: 16 + 140 * s, y: h - 168 * s, r: 20 * s, action: 'strafe_up', hold: true },
+    { id: 'down', label: '▼', x: 16 + 188 * s, y: h - 168 * s, r: 20 * s, action: 'strafe_down', hold: true },
+  ];
+  const top = ['target_next:TGT', 'camera_mode:CAM', 'flight_assist:FA', 'reset:↩', 'help:?'];
+  top.forEach((t, i) => { const [a, l] = t.split(':'); buttons.push({ id: a, label: l, x: w - 16 - 20 * s - i * 48 * s, y: 12 + 20 * s, r: 19 * s, action: a, hold: false }); });
+}
+function pressHold(a) { touchHeld.set(a, (touchHeld.get(a) || 0) + 1); }
+function releaseHold(a) { touchHeld.set(a, Math.max((touchHeld.get(a) || 0) - 1, 0)); }
+function releaseTouches() {
+  for (const t of touches.values()) { const b = buttons.find(b => b.id === t.role); if (b && b.hold) releaseHold(b.action); }
+  touches.clear(); ship.touchSteer.x = ship.touchSteer.y = 0;
+}
+function onMove(t) {
+  if (t.role === 'stick') {
+    const R = 60 * S; let dx = (t.x - t.ox) / R, dy = (t.y - t.oy) / R; let l = Math.hypot(dx, dy);
+    if (l > 1) { t.ox = t.x - dx / l * R; t.oy = t.y - dy / l * R; dx /= l; dy /= l; l = 1; }
+    const k = l > 0 ? Math.pow(l, CFG.stickExpo) / l : 0;
+    ship.touchSteer.x = dx * k; ship.touchSteer.y = dy * k;
+  } else if (t.role === 'throttle') {
+    const r = 1 - clamp((t.y - slider.y) / slider.h, 0, 1);
+    let thr = lerp(-CFG.reverse, 1, r); if (Math.abs(thr) < 0.04) thr = 0;
+    ship.throttle = thr;
+  }
+}
+hud.addEventListener('pointerdown', (e) => {
+  if (!UI.started) return;
+  e.preventDefault();
+  if (!UI.touch) {
+    if (hud.requestPointerLock && document.pointerLockElement !== hud) { try { const r = hud.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) {} }
+    return;
+  }
+  if (UI.help) { UI.help = false; return; }
+  try { hud.setPointerCapture(e.pointerId); } catch (_) {}
+  const x = e.clientX - hud.getBoundingClientRect().left, y = e.clientY - hud.getBoundingClientRect().top;
+  for (const b of buttons) {
+    if (Math.hypot(x - b.x, y - b.y) <= b.r * 1.2) {
+      touches.set(e.pointerId, { role: b.id, ox: x, oy: y, x, y });
+      if (b.hold) pressHold(b.action); else tapAction(b.action);
+      return;
+    }
+  }
+  if (x > slider.x - 24 && x < slider.x + slider.w + 24 && y > slider.y - 24 && y < slider.y + slider.h + 24) {
+    const t = { role: 'throttle', ox: x, oy: y, x, y }; touches.set(e.pointerId, t); onMove(t); return;
+  }
+  if (x < VW * 0.55) touches.set(e.pointerId, { role: 'stick', ox: x, oy: y, x, y });
+}, { passive: false });
+hud.addEventListener('pointermove', (e) => {
+  if (!UI.touch) {
+    if (document.pointerLockElement === hud) {
+      ship.steer.x += e.movementX * CFG.mouseSens; ship.steer.y += e.movementY * CFG.mouseSens;
+      const l = Math.hypot(ship.steer.x, ship.steer.y); if (l > 1) { ship.steer.x /= l; ship.steer.y /= l; }
+    }
+    return;
+  }
+  const t = touches.get(e.pointerId); if (!t) return;
+  const r = hud.getBoundingClientRect(); t.x = e.clientX - r.left; t.y = e.clientY - r.top; onMove(t);
+});
+const endPointer = (e) => {
+  const t = touches.get(e.pointerId); if (!t) return;
+  touches.delete(e.pointerId);
+  if (t.role === 'stick') { ship.touchSteer.x = ship.touchSteer.y = 0; return; }
+  const b = buttons.find(b => b.id === t.role); if (b && b.hold) releaseHold(b.action);
+};
+hud.addEventListener('pointerup', endPointer);
+hud.addEventListener('pointercancel', endPointer);
+hud.addEventListener('contextmenu', (e) => e.preventDefault());
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+hud.addEventListener('wheel', (e) => { ship.throttle = clamp(ship.throttle - Math.sign(e.deltaY) * 0.05, -CFG.reverse, 1); e.preventDefault(); }, { passive: false });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { keys.clear(); releaseTouches(); } });
+
+function drawTouchUI() {
+  // スティック
+  let drawn = false;
+  for (const t of touches.values()) if (t.role === 'stick') {
+    const R = 60 * S; circle(t.ox, t.oy, R, COL.fill, COL.dim);
+    const dx = t.x - t.ox, dy = t.y - t.oy, l = Math.hypot(dx, dy), k = l > R ? R / l : 1;
+    circle(t.ox + dx * k, t.oy + dy * k, 24 * S, COL.active); drawn = true;
+  }
+  if (!drawn) {
+    const hx = 16 + 100 * S, hy = VH - 74 * S;
+    circle(hx, hy, 60 * S, 'rgba(115,227,255,0.04)', 'rgba(115,227,255,0.18)');
+    text(hx, hy + 4 * S, 'ドラッグで旋回', 11 * S, 'rgba(232,248,255,0.4)', 'center');
+  }
+  // スロットル
+  const s = slider, rev = CFG.reverse;
+  ctx.fillStyle = COL.fill; ctx.fillRect(s.x, s.y, s.w, s.h);
+  ctx.strokeStyle = COL.dim; ctx.lineWidth = 2; ctx.strokeRect(s.x, s.y, s.w, s.h);
+  const zy = s.y + s.h * (1 - rev / (1 + rev));
+  line(s.x - 6, zy, s.x + s.w + 6, zy, COL.main, 2);
+  const ty = s.y + s.h * (1 - (ship.throttle + rev) / (1 + rev));
+  ctx.fillStyle = ship.throttle >= 0 ? COL.active : 'rgba(255,90,70,0.45)';
+  ctx.fillRect(s.x, Math.min(ty, zy), s.w, Math.abs(zy - ty));
+  ctx.fillStyle = COL.text; ctx.fillRect(s.x - 5, ty - 4, s.w + 10, 8);
+  text(s.x + s.w / 2, s.y - 8, 'THR', 12 * S, COL.text, 'center');
+  // ボタン
+  for (const b of buttons) {
+    let pressed = false; for (const t of touches.values()) if (t.role === b.id) pressed = true;
+    if (b.id === 'flight_assist' && !ship.fa) pressed = true;
+    circle(b.x, b.y, b.r, pressed ? COL.active : 'rgba(2,8,18,0.35)', COL.dim);
+    const fs = b.label.length <= 2 ? (b.label.length === 1 ? 22 : 14) : (b.r > 30 * S ? 14 : 11);
+    text(b.x, b.y + fs * S * 0.36, b.label, fs * S, COL.text, 'center');
+  }
+}
+
+function drawHUD() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, VW, VH);
+  if (!UI.started) return;
+  const cx = VW / 2, cy = VH / 2, k = S;
+  // クロスヘア
+  line(cx - 13 * k, cy, cx - 5 * k, cy, COL.main); line(cx + 5 * k, cy, cx + 13 * k, cy, COL.main); line(cx, cy + 5 * k, cx, cy + 11 * k, COL.main);
+  if (!UI.touch && document.pointerLockElement === hud) {
+    const r = 100 * k; circle(cx, cy, r, null, COL.dim, 1.5);
+    const px = cx + ship.steer.x * r, py = cy + ship.steer.y * r; line(cx, cy, px, py, COL.dim, 1.5); circle(px, py, 5, COL.main);
+  }
+  // 進行方向
+  if (ship.vel.length() > 5) {
+    const pr = project(camera.position.clone().addScaledVector(ship.vel.clone().normalize(), 5000));
+    if (!pr.behind) {
+      circle(pr.x, pr.y, 8 * k, null, COL.pro);
+      line(pr.x - 15 * k, pr.y, pr.x - 8 * k, pr.y, COL.pro); line(pr.x + 8 * k, pr.y, pr.x + 15 * k, pr.y, COL.pro); line(pr.x, pr.y - 8 * k, pr.x, pr.y - 14 * k, COL.pro);
+    }
+  }
+  if (!G.finished && G.index < gates.length) marker(gates[G.index].mesh.position, `GATE ${G.index + 1}/${gates.length}`, COL.gate, -18);
+  const tg = bodies[targetIndex];
+  const td = Math.max(tg.node.position.distanceTo(ship.pos) - tg.radius, 0);
+  marker(tg.node.position, `${tg.name}  ${fmtDist(td)}`, COL.target);
+
+  // ステータス
+  const top = UI.touch;
+  let x = 16, y = top ? 10 + 20 * k : VH - 150 * k;
+  text(x, y, 'SPEED', 11 * k, COL.dim);
+  text(x, y + 28 * k, `${Math.round(ship.vel.length())} m/s`, 26 * k, COL.main);
+  const bw = 170 * k, by = y + 42 * k, rev = CFG.reverse;
+  ctx.strokeStyle = COL.dim; ctx.lineWidth = 1.5; ctx.strokeRect(x, by, bw, 8 * k);
+  const zx = x + bw * (rev / (1 + rev)); line(zx, by - 3, zx, by + 8 * k + 3, COL.main, 1.5);
+  const tw = bw / (1 + rev) * ship.throttle;
+  ctx.fillStyle = ship.throttle >= 0 ? COL.main : COL.warn; ctx.fillRect(Math.min(zx, zx + tw), by, Math.abs(tw), 8 * k);
+  text(x + bw + 8, by + 8 * k, `THR ${Math.round(ship.throttle * 100)}%`, 11 * k, COL.main);
+  const by2 = by + 18 * k;
+  ctx.strokeStyle = COL.dim; ctx.strokeRect(x, by2, bw, 5 * k);
+  ctx.fillStyle = 'rgba(255,150,60,0.9)'; ctx.fillRect(x, by2, bw * ship.boostE, 5 * k);
+  text(x + bw + 8, by2 + 6 * k, 'BOOST', 10 * k, 'rgba(255,150,60,0.95)');
+  const by3 = by2 + 24 * k;
+  text(x, by3, ship.fa ? 'FA: ON' : 'FA: OFF', 12 * k, ship.fa ? COL.main : COL.warn);
+  text(x + 70 * k, by3, ['WARP: 待機', 'WARP: 充填中', 'WARP: 航行中'][ship.warp], 12 * k, ship.warp ? COL.warp : COL.dim);
+  if (ship.aligning) text(x + 175 * k, by3, 'AUTO-ALIGN', 12 * k, COL.target);
+
+  // ターゲット
+  const tx = top ? Math.max(16 + 260 * k, VW * 0.34) : VW - 16 - 250 * k;
+  const ty0 = top ? 10 + 20 * k : VH - 150 * k;
+  const dir = tg.node.position.clone().sub(ship.pos).normalize(), closing = ship.vel.dot(dir);
+  text(tx, ty0, top ? 'TARGET' : 'TARGET  (T: 切替 / Y長押し: 自動旋回)', 11 * k, COL.dim);
+  text(tx, ty0 + 24 * k, tg.name, 20 * k, COL.target);
+  text(tx, ty0 + 44 * k, `距離 ${fmtDist(td)}`, 13 * k, COL.main);
+  text(tx, ty0 + 62 * k, `接近 ${Math.round(closing)} m/s   ETA ${closing > 1 ? fmtTime(td / closing) : '--:--'}`, 13 * k, COL.main);
+
+  // ゲート
+  const gx = VW - 16 - 200 * k, gy = top ? 12 + 58 * k : 30 * k;
+  text(gx, gy, 'GATE COURSE', 11 * k, COL.dim);
+  if (G.finished) text(gx, gy + 22 * k, `完走 ${G.time.toFixed(2)} 秒`, 17 * k, COL.gate);
+  else text(gx, gy + 22 * k, `${G.index} / ${gates.length}   ${G.time.toFixed(2)} 秒`, 17 * k, COL.gate);
+  if (G.best > 0) text(gx, gy + 40 * k, `ベスト ${G.best.toFixed(2)} 秒`, 12 * k, COL.main);
+
+  // 近接警告
+  const nb = nearestBody(ship.pos);
+  if (nb) {
+    const cl = ship.vel.dot(nb.body.node.position.clone().sub(ship.pos).normalize());
+    if (nb.surface < 600 && cl > 20 && Math.floor(performance.now() / 250) % 2 === 0)
+      text(cx, cy - 90 * k, `⚠ 近接警告  ${nb.body.name}  高度 ${fmtDist(nb.surface)}`, 18 * k, COL.warn, 'center');
+  }
+  // ワープ充填
+  if (ship.warp === 1) {
+    const w = 240 * k, r = ship.warpT / CFG.warpSpool;
+    ctx.strokeStyle = COL.dim; ctx.strokeRect(cx - w / 2, cy + 60 * k, w, 6 * k);
+    ctx.fillStyle = COL.warp; ctx.fillRect(cx - w / 2, cy + 60 * k, w * r, 6 * k);
+    text(cx, cy + 54 * k, 'WARP CHARGING', 12 * k, COL.warp, 'center');
+  }
+  // メッセージ
+  if (UI.msgT > 0) text(cx, top ? VH * 0.3 : 80 * k, UI.msg, 18 * k, `rgba(255,255,255,${clamp(UI.msgT, 0, 1)})`, 'center');
+
+  if (UI.touch) drawTouchUI();
+  else if (document.pointerLockElement !== hud) text(cx, cy + 120 * k, 'クリックでマウス操縦（Esc で解除）', 16 * k, 'rgba(255,255,255,0.85)', 'center');
+  if (VH > VW * 1.05) text(cx, VH * 0.45, '横向きにすると遊びやすくなります', 15 * k, COL.target, 'center');
+  if (UI.help) drawHelp();
+}
+
+function drawHelp() {
+  const k = S;
+  const lines = UI.touch ? [
+    '■ タッチ操作（画面タップで閉じる）',
+    '左半分をドラッグ : 機首の向き',
+    '右端 THR : スロットル（線より下は後退）',
+    'BOOST 長押し : 加速 / WARP : ワープ',
+    '自動旋回 長押し : ターゲットへ向く',
+    '↺ ↻ : ロール   ▲ ▼ : 上下移動',
+    'TGT : ターゲット切替  CAM : カメラ',
+    'FA : 慣性飛行切替  ↩ : リスタート',
+  ] : [
+    '■ 操作説明 (H で閉じる)',
+    'マウス : 機首の向き（クリックで開始）',
+    'W / S : スロットル   X : 0   ホイール : 微調整',
+    'A / D : ロール   Q / E : 左右移動',
+    'Space / Ctrl : 上下移動   矢印 : ピッチ/ヨー',
+    'Shift : ブースト   Tab : ワープ',
+    'T : ターゲット切替   Y 長押し : 自動旋回',
+    'Z : フライトアシスト   C : カメラ切替',
+    'V : 照準センタリング   I : 上下反転',
+    'Backspace : リスタート   G : タッチ操作UI',
+  ];
+  const lh = 20 * k, w = Math.min(430 * k, VW - 32), h = lh * lines.length + 16 * k;
+  const x = UI.touch ? (VW - w) / 2 : 16, y = UI.touch ? (VH - h) / 2 : 16;
+  ctx.fillStyle = 'rgba(2,10,22,0.78)'; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = COL.dim; ctx.lineWidth = 1; ctx.strokeRect(x, y, w, h);
+  lines.forEach((l, i) => text(x + 12 * k, y + 22 * k + i * lh, l, (i ? 12.5 : 14) * k, i ? COL.main : COL.target));
+}
+
+// ===================== ループ =====================
+function resize() {
+  const r = document.getElementById('wrap').getBoundingClientRect();
+  VW = Math.max(1, r.width); VH = Math.max(1, r.height); DPR = Math.min(window.devicePixelRatio || 1, 2);
+  S = clamp(Math.min(VW, VH) / 400, 0.72, 1.45);
+  renderer.setSize(VW, VH, false);
+  hud.width = Math.round(VW * DPR); hud.height = Math.round(VH * DPR);
+  camera.aspect = VW / VH; camera.updateProjectionMatrix();
+  layout();
+}
+addEventListener('resize', resize);
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  updateOrbits(dt);
+  if (UI.started) { updateShip(dt); updateGates(dt); }
+  else { shipModel.position.copy(ship.pos); shipModel.quaternion.copy(ship.quat); updateEngine(dt); }
+  updateCamera(dt);
+  updateDust();
+  UI.msgT = Math.max(UI.msgT - dt, 0);
+  renderer.render(scene, camera);
+  drawHUD();
+  requestAnimationFrame(frame);
+}
+
+// ===================== 起動 =====================
+(async function boot() {
+  const prog = document.getElementById('prog'), go = document.getElementById('go');
+  document.getElementById('keys').innerHTML = IS_TOUCH
+    ? '<b>左ドラッグ</b> 旋回　<b>右端スライダー</b> スロットル　<b>BOOST / WARP</b> 加速・ワープ　<b>?</b> 操作説明'
+    : '<b>マウス</b> 旋回　<b>W/S</b> スロットル　<b>Shift</b> ブースト　<b>Tab</b> ワープ　<b>H</b> 操作説明';
+  resize();
+  buildSun();
+  buildShipModel();
+  await buildPlanets((r) => { prog.style.width = Math.round(r * 100) + '%'; });
+  updateOrbits(0);
+  startXf.pos.copy(findBody('テラノヴァ').node.position).add(new V3(0, 400, 6000));
+  buildAsteroids(startXf.pos);
+  buildGates(startXf.pos);
+  resetShip(); resetGates();
+  initDust(startXf.pos);
+  targetIndex = bodies.indexOf(findBody('テラノヴァ'));
+  prog.style.width = '100%';
+  go.disabled = false; go.textContent = '発進';
+  requestAnimationFrame(frame);
+  go.addEventListener('click', () => {
+    document.getElementById('start').hidden = true;
+    UI.started = true; last = performance.now();
+    showMsg(UI.touch ? '右のスライダーを上げて発進' : 'W でスロットルを上げて発進（クリックでマウス操縦）', 5);
+  });
+})();
+</script>
