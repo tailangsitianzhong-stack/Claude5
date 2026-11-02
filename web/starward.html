@@ -50,7 +50,7 @@ h1 span { color: var(--hud); }
     <div class="panel">
       <div class="eyebrow">Prototype · Flight Test</div>
       <h1>STAR<span>WARD</span></h1>
-      <p class="lede">恒星ソルを中心とする7天体の星系を、宇宙船で自由に飛び回るプロトタイプです。着陸はできません。スタート地点の前方にはリングゲート10個のタイムアタックコースがあります。</p>
+      <p class="lede">半径290kmの星系に、12の惑星と5つの衛星、2つの小惑星帯。宇宙船で自由に飛び回るプロトタイプです。着陸はできません。スタート地点の前方にはリングゲート10個のタイムアタックコースがあります。</p>
       <div class="bar"><i id="prog"></i></div>
       <button id="go" disabled>準備中…</button>
       <p class="keys" id="keys"></p>
@@ -76,7 +76,7 @@ const IS_TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) 
 const CFG = {
   maxSpeed: 300, boostMul: 2.5, reverse: 0.35, assistAccel: 160, thrustAccel: 120, strafeSpeed: 90,
   throttleRate: 0.7, pitchRate: 1.5, yawRate: 1.1, rollRate: 2.6, rotResp: 5,
-  boostDrain: 0.22, boostRegen: 0.12, warpMax: 15000, warpSpool: 2, warpAccel: 6000,
+  boostDrain: 0.22, boostRegen: 0.12, warpMax: 45000, warpSpool: 2, warpAccel: 15000,
   mouseSens: 0.0022, deadzone: 0.05, stickExpo: 1.6, baseFov: 62,
 };
 
@@ -106,6 +106,7 @@ function fbm(x, y, z, oct) {
 // ===================== 星系データ =====================
 // type: 0=地球型 2=ガス 3=氷 4=溶岩 5=岩石
 const PLANETS = [
+  // 内側の星系
   { name: 'ヴァルカン', type: 4, radius: 700, orbit: 9000, angle: 2.4, orbitSpeed: 0.0008, spin: 0.02,
     a: hex(0x1a120f), b: hex(0x472419), c: hex(0xff5a0d), atmo: 0xff6619, atmoStrength: 0.5, seed: 3, tex: 512 },
   { name: 'アクア', type: 0, radius: 1000, orbit: 15000, angle: -0.5, orbitSpeed: 0.0005, spin: 0.012,
@@ -114,14 +115,43 @@ const PLANETS = [
   { name: 'テラノヴァ', type: 0, radius: 1300, orbit: 22000, angle: 0.35, orbitSpeed: 0.0003, spin: 0.01,
     a: hex(0x0a2b6b), b: hex(0x2e6124), c: hex(0x8c7354), sea: 0.5, clouds: true,
     atmo: 0x66b3ff, atmoStrength: 1.0, seed: 27, tex: 1024 },
+  { name: 'ルナリス', parent: 'テラノヴァ', type: 5, radius: 320, orbit: 4200, angle: 2.0, orbitSpeed: 0.01, spin: 0.01,
+    a: hex(0x595755), b: hex(0x9c948c), c: hex(0xd9d9d9), seed: 7, tex: 256 },
+  { name: 'ドゥーナ', type: 0, radius: 900, orbit: 26000, angle: 2.9, orbitSpeed: 0.00025, spin: 0.014,
+    a: hex(0x3a6b7a), b: hex(0xd9a35e), c: hex(0x8a4e2a), sea: 0.28,
+    atmo: 0xffb873, atmoStrength: 0.6, seed: 19, tex: 512 },
+  // 小惑星帯 29〜33km
+  // 外側の星系
   { name: 'ジュピタス', type: 2, radius: 4200, orbit: 46000, angle: 0.9, orbitSpeed: 0.0001, spin: 0.006,
     a: hex(0xc79e75), b: hex(0x8c5438), c: hex(0xebe0c7), atmo: 0xe6bf8c, atmoStrength: 0.7, seed: 5, rings: true, tex: 1024 },
-  { name: 'グレイシア', type: 3, radius: 1100, orbit: 64000, angle: 0.15, orbitSpeed: 0.00008, spin: 0.008,
+  { name: 'イオラ', parent: 'ジュピタス', type: 4, radius: 380, orbit: 9000, angle: 0.5, orbitSpeed: 0.006, spin: 0.01,
+    a: hex(0x6b5a1f), b: hex(0xc9b44a), c: hex(0xffd23a), seed: 13, tex: 256 },
+  { name: 'カリスト', parent: 'ジュピタス', type: 5, radius: 520, orbit: 14000, angle: 3.6, orbitSpeed: 0.004, spin: 0.008,
+    a: hex(0x3d3530), b: hex(0x7a6e62), c: hex(0xc9c2b8), seed: 23, tex: 256 },
+  { name: 'ネメシス', type: 2, radius: 3200, orbit: 70000, angle: 3.8, orbitSpeed: 0.00007, spin: 0.007,
+    a: hex(0x9fbf4a), b: hex(0x4f7a2e), c: hex(0xe0e8a0), atmo: 0xc8ff7a, atmoStrength: 0.7, seed: 31, tex: 512 },
+  { name: 'ケール', parent: 'ネメシス', type: 3, radius: 420, orbit: 8500, angle: 1.2, orbitSpeed: 0.006, spin: 0.01,
+    a: hex(0xa8c7d9), b: hex(0x4a7fa6), c: hex(0xeef6ff), seed: 37, tex: 256 },
+  { name: 'グレイシア', type: 3, radius: 1100, orbit: 92000, angle: 0.15, orbitSpeed: 0.00005, spin: 0.008,
     a: hex(0xb3d1eb), b: hex(0x3373b3), c: hex(0xf2f7ff), atmo: 0x99d9ff, atmoStrength: 0.6, seed: 41, tex: 512 },
-  { name: 'ルナリス', parent: 'テラノヴァ', type: 5, radius: 320, orbit: 4200, angle: 2.0, orbitSpeed: 0.01, spin: 0.01,
-    a: hex(0x595755), b: hex(0x9c948c), c: hex(0xd9d9d9), seed: 7, tex: 512 },
+  { name: 'サフィラ', type: 2, radius: 2800, orbit: 120000, angle: 5.1, orbitSpeed: 0.00004, spin: 0.009,
+    a: hex(0x4f8fd9), b: hex(0x2a4f9e), c: hex(0xa8d8ff), atmo: 0x7ab8ff, atmoStrength: 0.9, seed: 43, rings: true, ringColor: [150, 190, 230], tex: 512 },
+  { name: 'ヴェルデ', type: 0, radius: 1500, orbit: 150000, angle: 2.2, orbitSpeed: 0.00003, spin: 0.011,
+    a: hex(0x0d4a4a), b: hex(0x1f6b1f), c: hex(0x6b8a2e), sea: 0.42, clouds: true,
+    atmo: 0x8affc8, atmoStrength: 1.0, seed: 53, tex: 512 },
+  { name: 'ミスト', parent: 'ヴェルデ', type: 5, radius: 360, orbit: 5200, angle: 4.0, orbitSpeed: 0.008, spin: 0.01,
+    a: hex(0x4a4f5a), b: hex(0x8a90a0), c: hex(0xd0d6e6), seed: 59, tex: 256 },
+  { name: 'クリムゾン', type: 5, radius: 800, orbit: 175000, angle: 4.4, orbitSpeed: 0.000025, spin: 0.012,
+    a: hex(0x5a1a10), b: hex(0xb3482a), c: hex(0xe8a080), atmo: 0xff7a5a, atmoStrength: 0.4, seed: 61, tex: 512 },
+  { name: 'オーロラ', type: 2, radius: 3800, orbit: 210000, angle: 1.4, orbitSpeed: 0.00002, spin: 0.006,
+    a: hex(0x8a5ac7), b: hex(0x4a2a7a), c: hex(0xe0c8ff), atmo: 0xc89aff, atmoStrength: 0.8, seed: 67, rings: true, ringColor: [200, 170, 235], tex: 512 },
+  // 外縁の小惑星帯 235〜255km
+  { name: 'ハデス', type: 3, radius: 600, orbit: 280000, angle: 3.3, orbitSpeed: 0.000015, spin: 0.01,
+    a: hex(0x3a3f4a), b: hex(0x1a1d26), c: hex(0x8a92a6), seed: 71, tex: 256 },
 ];
 const SUN_RADIUS = 3000, BELT_INNER = 29000, BELT_OUTER = 33000, BELT_COUNT = 1600;
+const OUTER_INNER = 235000, OUTER_OUTER = 255000, OUTER_COUNT = 1400;
+const SYSTEM_RADIUS = 290000;
 const GATE_COUNT = 10, GATE_RADIUS = 40;
 
 // ===================== レンダラー =====================
@@ -320,7 +350,8 @@ function buildRings(p, root) {
     const gap = smooth(0.02, 0, Math.abs(t - 0.62));
     const a = bands * smooth(0, 0.05, t) * smooth(1, 0.9, t) * (1 - gap);
     const k = 0.6 + bands * 0.5;
-    img.data.set([217 * k, 191 * k, 153 * k, clamp(a * 0.85, 0, 1) * 255], x * 4);
+    const rc = p.ringColor || [217, 191, 153];
+    img.data.set([rc[0] * k, rc[1] * k, rc[2] * k, clamp(a * 0.85, 0, 1) * 255], x * 4);
   }
   g.putImageData(img, 0, 0);
   const tex = canvasTex(cv);
@@ -396,6 +427,10 @@ function buildAsteroids(startPos) {
   for (let i = 0; i < BELT_COUNT; i++) {
     const a = rnd() * TAU, r = lerp(BELT_INNER, BELT_OUTER, rnd());
     add(new V3(Math.cos(a) * r, gauss() * 350, Math.sin(a) * r), rnd() > 0.05 ? lerp(15, 140, rnd()) : lerp(200, 400, rnd()));
+  }
+  for (let i = 0; i < OUTER_COUNT; i++) {
+    const a = rnd() * TAU, r = lerp(OUTER_INNER, OUTER_OUTER, rnd());
+    add(new V3(Math.cos(a) * r, gauss() * 1200, Math.sin(a) * r), rnd() > 0.08 ? lerp(40, 260, rnd()) : lerp(400, 900, rnd()));
   }
   const cl = startPos.clone().add(new V3(2600, 0, -2200));
   for (let i = 0; i < 220; i++) add(cl.clone().add(new V3(gauss(), gauss() * 0.5, gauss()).multiplyScalar(700)), lerp(6, 60, rnd()));
@@ -547,7 +582,7 @@ const KEYMAP = {
 const held = (a) => (touchHeld.get(a) || 0) > 0 || (KEYMAP[a] || []).some(k => keys.has(k));
 const axis = (neg, pos) => (held(pos) ? 1 : 0) - (held(neg) ? 1 : 0);
 
-const UI = { touch: IS_TOUCH, help: !IS_TOUCH, started: false, msg: '', msgT: 0 };
+const UI = { touch: IS_TOUCH, help: !IS_TOUCH, map: false, started: false, msg: '', msgT: 0 };
 function showMsg(t, d = 2.5) { UI.msg = t; UI.msgT = d; }
 
 function tapAction(a) {
@@ -559,12 +594,13 @@ function tapAction(a) {
     case 'throttle_zero': ship.throttle = 0; break;
     case 'recenter': ship.steer.x = ship.steer.y = 0; break;
     case 'invert_y': ship.invertY = !ship.invertY; showMsg('上下反転: ' + (ship.invertY ? 'ON' : 'OFF')); break;
-    case 'help': UI.help = !UI.help; break;
+    case 'help': UI.help = !UI.help; UI.map = false; break;
+    case 'map': UI.map = !UI.map; UI.help = false; break;
     case 'reset': resetShip(); resetGates(); showMsg('リスタート', 1.5); break;
     case 'touch_ui': UI.touch = !UI.touch; releaseTouches(); if (UI.touch && document.exitPointerLock) document.exitPointerLock(); showMsg('タッチ操作: ' + (UI.touch ? 'ON' : 'OFF'), 1.5); break;
   }
 }
-const KEY_TAPS = { Tab: 'warp', KeyZ: 'flight_assist', KeyC: 'camera_mode', KeyT: 'target_next', KeyX: 'throttle_zero', KeyV: 'recenter', KeyI: 'invert_y', KeyH: 'help', Backspace: 'reset', KeyG: 'touch_ui' };
+const KEY_TAPS = { Tab: 'warp', KeyZ: 'flight_assist', KeyC: 'camera_mode', KeyT: 'target_next', KeyX: 'throttle_zero', KeyV: 'recenter', KeyI: 'invert_y', KeyH: 'help', Backspace: 'reset', KeyG: 'touch_ui', KeyM: 'map' };
 addEventListener('keydown', (e) => {
   if (!UI.started) return;
   if (KEY_TAPS[e.code] || KEYMAP.boost.includes(e.code) || e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -671,7 +707,7 @@ function updateShip(dt) {
       let a = CFG.assistAccel * (ship.boosting ? 2 : 1);
       if (ship.vel.length() > cap * 1.05) a *= 3;
       const diff = desired.sub(ship.vel), dl = diff.length(), step = a * dt;
-      if (dl <= step) ship.vel.add(diff); else ship.vel.addScaledVector(diff, step / dl);
+      if (dl <= step || dl < 1e-6) ship.vel.add(diff); else ship.vel.addScaledVector(diff, step / dl);
     } else {
       ship.vel.addScaledVector(fwd, ship.throttle * CFG.thrustAccel * (ship.boosting ? 2 : 1) * dt);
       ship.vel.addScaledVector(right, sx * CFG.thrustAccel * 0.6 * dt).addScaledVector(up, sy * CFG.thrustAccel * 0.6 * dt);
@@ -801,7 +837,7 @@ function layout() {
     { id: 'up', label: '▲', x: 16 + 140 * s, y: h - 168 * s, r: 20 * s, action: 'strafe_up', hold: true },
     { id: 'down', label: '▼', x: 16 + 188 * s, y: h - 168 * s, r: 20 * s, action: 'strafe_down', hold: true },
   ];
-  const top = ['target_next:TGT', 'camera_mode:CAM', 'flight_assist:FA', 'reset:↩', 'help:?'];
+  const top = ['map:MAP', 'target_next:TGT', 'camera_mode:CAM', 'flight_assist:FA', 'reset:↩', 'help:?'];
   top.forEach((t, i) => { const [a, l] = t.split(':'); buttons.push({ id: a, label: l, x: w - 16 - 20 * s - i * 48 * s, y: 12 + 20 * s, r: 19 * s, action: a, hold: false }); });
 }
 function pressHold(a) { touchHeld.set(a, (touchHeld.get(a) || 0) + 1); }
@@ -825,6 +861,12 @@ function onMove(t) {
 hud.addEventListener('pointerdown', (e) => {
   if (!UI.started) return;
   e.preventDefault();
+  if (UI.map) {
+    const r0 = hud.getBoundingClientRect(), mx = e.clientX - r0.left, my = e.clientY - r0.top;
+    const mb = buttons.find(b => b.id === 'map');
+    if (UI.touch && mb && Math.hypot(mx - mb.x, my - mb.y) <= mb.r * 1.2) { UI.map = false; return; }
+    mapTap(mx, my); return;
+  }
   if (!UI.touch) {
     if (hud.requestPointerLock && document.pointerLockElement !== hud) { try { const r = hud.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) {} }
     return;
@@ -979,10 +1021,62 @@ function drawHUD() {
   // メッセージ
   if (UI.msgT > 0) text(cx, top ? VH * 0.3 : 80 * k, UI.msg, 18 * k, `rgba(255,255,255,${clamp(UI.msgT, 0, 1)})`, 'center');
 
+  if (UI.map) { drawMap(); if (UI.touch) { const mb = buttons.find(b => b.id === 'map'); circle(mb.x, mb.y, mb.r, COL.active, COL.dim); text(mb.x, mb.y + 4 * S, 'MAP', 11 * S, COL.text, 'center'); } return; }
   if (UI.touch) drawTouchUI();
   else if (document.pointerLockElement !== hud) text(cx, cy + 120 * k, 'クリックでマウス操縦（Esc で解除）', 16 * k, 'rgba(255,255,255,0.85)', 'center');
   if (VH > VW * 1.05) text(cx, VH * 0.45, '横向きにすると遊びやすくなります', 15 * k, COL.target, 'center');
   if (UI.help) drawHelp();
+}
+
+// ---------- 星系マップ（距離は平方根スケール） ----------
+let mapPts = [];
+function mapGeom() {
+  const top = UI.touch ? 64 * S : 16, R = Math.max(60, Math.min(VW * 0.5 - 24, (VH - top - 16) * 0.5));
+  return { cx: VW / 2, cy: top + (VH - top - 16) / 2, R };
+}
+const mapR = (d, R) => Math.sqrt(Math.max(d, 0) / SYSTEM_RADIUS) * R;
+function mapXY(p, g) { const d = Math.hypot(p.x, p.z), r = mapR(d, g.R), a = Math.atan2(p.z, p.x); return [g.cx + Math.cos(a) * r, g.cy + Math.sin(a) * r]; }
+function drawMap() {
+  const g = mapGeom(), k = S;
+  ctx.fillStyle = 'rgba(1,5,14,0.86)'; ctx.fillRect(0, 0, VW, VH);
+  // 小惑星帯
+  for (const [a, b] of [[BELT_INNER, BELT_OUTER], [OUTER_INNER, OUTER_OUTER]]) {
+    ctx.beginPath(); ctx.arc(g.cx, g.cy, (mapR(a, g.R) + mapR(b, g.R)) / 2, 0, TAU);
+    ctx.strokeStyle = 'rgba(180,160,140,0.22)'; ctx.lineWidth = Math.max(3, mapR(b, g.R) - mapR(a, g.R)); ctx.stroke();
+  }
+  mapPts = [];
+  for (const b of bodies) {
+    if (!b.parent && b.orbit) circle(g.cx, g.cy, mapR(b.orbit, g.R), null, 'rgba(115,227,255,0.14)', 1);
+  }
+  bodies.forEach((b, i) => {
+    let [x, y] = mapXY(b.node.position, g);
+    if (b.parent) {
+      // 衛星は親の周りに少し離して描く
+      const pp = findBody(b.parent).node.position, [px, py] = mapXY(pp, g);
+      const a = Math.atan2(b.node.position.z - pp.z, b.node.position.x - pp.x);
+      x = px + Math.cos(a) * 14 * k; y = py + Math.sin(a) * 14 * k;
+    }
+    const sel = i === targetIndex;
+    const rad = b.parent ? 2.5 * k : clamp(Math.sqrt(b.radius) / 14, 3, 8) * k;
+    circle(x, y, rad, i === 0 ? '#ffcf6a' : (b.parent ? 'rgba(200,210,220,0.8)' : 'rgba(170,220,255,0.95)'));
+    if (sel) circle(x, y, rad + 6 * k, null, COL.target, 2);
+    if (!b.parent || sel) text(x + rad + 4 * k, y + 4 * k, b.name, (b.parent ? 10 : 11.5) * k, sel ? COL.target : 'rgba(232,248,255,0.85)');
+    mapPts.push({ i, x, y });
+  });
+  // 自機
+  const [sx, sy] = mapXY(ship.pos, g), f = fwdOf(ship.quat), fa = Math.atan2(f.z, f.x);
+  ctx.beginPath();
+  ctx.moveTo(sx + Math.cos(fa) * 9 * k, sy + Math.sin(fa) * 9 * k);
+  ctx.lineTo(sx + Math.cos(fa + 2.5) * 6 * k, sy + Math.sin(fa + 2.5) * 6 * k);
+  ctx.lineTo(sx + Math.cos(fa - 2.5) * 6 * k, sy + Math.sin(fa - 2.5) * 6 * k);
+  ctx.closePath(); ctx.fillStyle = COL.pro; ctx.fill();
+  text(16, VH - 14, UI.touch ? '天体をタップで目的地に設定 / MAP で閉じる' : '天体をクリックで目的地に設定 / M で閉じる', 12 * k, COL.dim);
+  text(VW - 16, VH - 14, `星系半径 ${fmtDist(SYSTEM_RADIUS)}`, 12 * k, COL.dim, 'right');
+}
+function mapTap(x, y) {
+  let best = null, bd = 30 * S;
+  for (const p of mapPts) { const d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = p; } }
+  if (best) { targetIndex = best.i; UI.map = false; showMsg('目的地: ' + bodies[best.i].name + '（自動旋回で向けます）', 2.5); }
 }
 
 function drawHelp() {
@@ -994,6 +1088,7 @@ function drawHelp() {
     'BOOST 長押し : 加速 / WARP : ワープ',
     '自動旋回 長押し : ターゲットへ向く',
     '↺ ↻ : ロール   ▲ ▼ : 上下移動',
+    'MAP : 星系マップ（タップで目的地）',
     'TGT : ターゲット切替  CAM : カメラ',
     'FA : 慣性飛行切替  ↩ : リスタート',
   ] : [
@@ -1003,7 +1098,7 @@ function drawHelp() {
     'A / D : ロール   Q / E : 左右移動',
     'Space / Ctrl : 上下移動   矢印 : ピッチ/ヨー',
     'Shift : ブースト   Tab : ワープ',
-    'T : ターゲット切替   Y 長押し : 自動旋回',
+    'T : ターゲット切替   Y 長押し : 自動旋回   M : 星系マップ',
     'Z : フライトアシスト   C : カメラ切替',
     'V : 照準センタリング   I : 上下反転',
     'Backspace : リスタート   G : タッチ操作UI',
@@ -1029,7 +1124,7 @@ addEventListener('resize', resize);
 
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  const dt = clamp((now - last) / 1000, 0, 0.05); last = now;
   updateOrbits(dt);
   if (UI.started) { updateShip(dt); updateGates(dt); }
   else { shipModel.position.copy(ship.pos); shipModel.quaternion.copy(ship.quat); updateEngine(dt); }
@@ -1045,8 +1140,8 @@ function frame(now) {
 (async function boot() {
   const prog = document.getElementById('prog'), go = document.getElementById('go');
   document.getElementById('keys').innerHTML = IS_TOUCH
-    ? '<b>左ドラッグ</b> 旋回　<b>右端スライダー</b> スロットル　<b>BOOST / WARP</b> 加速・ワープ　<b>?</b> 操作説明'
-    : '<b>マウス</b> 旋回　<b>W/S</b> スロットル　<b>Shift</b> ブースト　<b>Tab</b> ワープ　<b>H</b> 操作説明';
+    ? '<b>左ドラッグ</b> 旋回　<b>右端スライダー</b> スロットル　<b>BOOST / WARP</b> 加速・ワープ　<b>MAP</b> 星系マップ'
+    : '<b>マウス</b> 旋回　<b>W/S</b> スロットル　<b>Shift</b> ブースト　<b>Tab</b> ワープ　<b>M</b> 星系マップ　<b>H</b> 操作説明';
   resize();
   buildSun();
   buildShipModel();
