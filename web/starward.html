@@ -20,27 +20,49 @@ body { height: 100%; margin: 0; overflow: hidden; background: var(--void); color
 #gl, #hud { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #hud { touch-action: none; }
 #start {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at 70% 40%, rgba(40, 70, 140, 0.35), rgba(2, 4, 10, 0.92) 60%);
-  padding-inline: 16px; z-index: 5;
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-start;
+  background: linear-gradient(90deg, rgba(2, 4, 10, 0.94) 0%, rgba(2, 4, 10, 0.78) 42%, rgba(2, 4, 10, 0) 72%);
+  padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: 16px; z-index: 5; overflow-y: auto;
 }
-.panel { max-width: 34rem; width: 100%; display: grid; gap: 14px; }
-.eyebrow { font-size: 12px; letter-spacing: 0.32em; color: var(--hud); text-transform: uppercase; }
-h1 { margin: 0; font-size: clamp(40px, 9vw, 76px); font-weight: 700; letter-spacing: 0.08em; line-height: 0.95; color: var(--ink); text-wrap: balance; }
+#start[hidden] { display: none; }
+.panel { width: min(30rem, 54%); display: grid; gap: 12px; padding-block: 12px; }
+.eyebrow { font-size: 11px; letter-spacing: 0.3em; color: var(--hud); text-transform: uppercase; }
+h1 { margin: 0; font-size: clamp(34px, 6vw, 60px); font-weight: 700; letter-spacing: 0.08em; line-height: 0.95; color: var(--ink); }
 h1 span { color: var(--hud); }
-.lede { margin: 0; font-size: 14px; line-height: 1.6; color: rgba(232, 248, 255, 0.75); }
+.picker { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.picker button {
+  width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--hud-dim); background: rgba(115, 227, 255, 0.08);
+  color: var(--hud); font: 600 16px var(--font-hud); cursor: pointer;
+}
+.picker button:active { background: rgba(115, 227, 255, 0.3); }
+.picker button:focus-visible, #go:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.pick { min-width: 0; }
+.ship-name { font-size: 24px; font-weight: 700; letter-spacing: 0.06em; color: var(--ink); line-height: 1.1; }
+.ship-class { font-size: 12px; letter-spacing: 0.12em; color: var(--amber); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.desc { margin: 0; font-size: 13px; line-height: 1.55; color: rgba(232, 248, 255, 0.78); min-height: 2.6em; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
+.stat { display: grid; grid-template-columns: 5.4em 1fr; white-space: nowrap; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.08em; color: rgba(232, 248, 255, 0.7); }
+.stat b { height: 5px; background: rgba(115, 227, 255, 0.14); border-radius: 3px; overflow: hidden; display: block; }
+.stat b i { display: block; height: 100%; background: var(--hud); border-radius: 3px; transition: width 0.25s; }
+.launch { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 14px; }
 .bar { height: 4px; background: rgba(115, 227, 255, 0.15); border-radius: 2px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0%; background: var(--hud); transition: width 0.2s; }
-#start[hidden] { display: none; }
 #go {
-  justify-self: start; font: 600 18px var(--font-hud); letter-spacing: 0.2em; color: var(--void);
-  background: var(--hud); border: 0; border-radius: 999px; padding: 12px 34px; cursor: pointer;
+  font: 600 18px var(--font-hud); letter-spacing: 0.2em; color: var(--void);
+  background: var(--hud); border: 0; border-radius: 999px; padding: 11px 32px; cursor: pointer;
 }
 #go:disabled { opacity: 0.35; cursor: default; }
-#go:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
-.keys { margin: 0; font-size: 12px; line-height: 1.7; color: rgba(232, 248, 255, 0.6); }
+.keys { margin: 0; font-size: 11px; line-height: 1.6; color: rgba(232, 248, 255, 0.55); }
 .keys b { color: var(--hud); font-weight: 600; }
-@media (max-height: 420px) { .panel { gap: 8px; } h1 { font-size: 44px; } .lede { font-size: 13px; } }
+@media (max-height: 430px) {
+  .panel { gap: 7px; } h1 { font-size: 30px; } .eyebrow { font-size: 10px; }
+  .ship-name { font-size: 20px; } .desc { font-size: 12px; line-height: 1.45; } .keys { display: none; }
+  .picker button { width: 40px; height: 40px; } #go { padding: 9px 26px; font-size: 16px; }
+}
+@media (orientation: portrait) {
+  #start { align-items: flex-end; background: linear-gradient(0deg, rgba(2, 4, 10, 0.95) 0%, rgba(2, 4, 10, 0.8) 55%, rgba(2, 4, 10, 0) 85%); }
+  .panel { width: 100%; }
+}
 </style>
 
 <div id="wrap">
@@ -48,11 +70,16 @@ h1 span { color: var(--hud); }
   <canvas id="hud"></canvas>
   <div id="start">
     <div class="panel">
-      <div class="eyebrow">Prototype · Flight Test</div>
+      <div class="eyebrow">Hangar · 機体を選んで発進</div>
       <h1>STAR<span>WARD</span></h1>
-      <p class="lede">半径290kmの星系に、12の惑星と5つの衛星、2つの小惑星帯。宇宙船で自由に飛び回るプロトタイプです。着陸はできません。スタート地点の前方にはリングゲート10個のタイムアタックコースがあります。</p>
-      <div class="bar"><i id="prog"></i></div>
-      <button id="go" disabled>準備中…</button>
+      <div class="picker">
+        <button id="prev" aria-label="前の機体">◀</button>
+        <div class="pick"><div class="ship-name" id="sname"></div><div class="ship-class" id="sclass"></div></div>
+        <button id="next" aria-label="次の機体">▶</button>
+      </div>
+      <p class="desc" id="sdesc"></p>
+      <div class="stats" id="stats"></div>
+      <div class="launch"><button id="go" disabled>準備中…</button><div class="bar"><i id="prog"></i></div></div>
       <p class="keys" id="keys"></p>
     </div>
   </div>
@@ -512,52 +539,275 @@ const shipModel = new THREE.Group();
 scene.add(shipModel);
 const engine = { flames: [], glowMats: [], navs: [], light: null, len: 0, col: new THREE.Color(0x4dccff), t: 0 };
 
-function buildShipModel() {
-  const hull = new THREE.MeshStandardMaterial({ color: 0xd1d9e6, metalness: 0.35, roughness: 0.4 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x1f2128, metalness: 0.5, roughness: 0.5 });
-  const accent = new THREE.MeshBasicMaterial({ color: 0x4de6ff });
-  const canopy = new THREE.MeshStandardMaterial({ color: 0x0a1f33, metalness: 0.8, roughness: 0.08, emissive: 0x0d3550 });
-  const part = (geo, mat, pos, rot, scl, parent = shipModel) => {
+// ---------- 機体ラインナップ ----------
+// stats は基準機（ストライダー）からの上書き。size はカメラ距離と当たり判定の倍率。
+const BASE_CFG = { ...CFG };
+const SHIPS = [
+  { name: 'ストライダー', cls: '汎用機', desc: '癖のない標準機。速度・旋回・ブーストのバランスが取れていて、最初の一機に向いています。',
+    hull: 0xd1d9e6, accent: 0x4de6ff, flame: 0x4dccff, size: 1, cockpit: [0, 0.95, -3.3], stats: {},
+    engines: [[-1.6, 0, 6.35, 0.45], [1.6, 0, 6.35, 0.45]], navs: [[-6.0, -0.1, 2.65], [6.0, -0.1, 2.65]],
+    build(P, G, M) {
+      P(G.cap(1.1, 7.8), M.hull, [0, 0, 0.5], [90, 0, 0], [1.3, 1, 0.65]);
+      P(G.cone(1, 4), M.hull, [0, 0, -6.4], [-90, 0, 0], [1.2, 1, 0.55]);
+      P(G.sph(0.8), M.canopy, [0, 0.55, -3.0], [0, 0, 0], [0.8, 0.55, 2.0]);
+      for (const s of [-1, 1]) {
+        const w = P(G.box(5.5, 0.18, 2.6), M.hull, [3.4 * s, -0.1, 1.8], [0, -18 * s, -6 * s]);
+        P(G.box(5.0, 0.08, 0.14), M.accent, [0.2 * s, 0.06, -1.25], [0, 0, 0], [1, 1, 1], w);
+        P(G.box(4.0, 0.1, 1.6), M.dark, [-0.4 * s, -0.1, 0.3], [0, 0, 0], [1, 1, 1], w);
+        P(G.box(0.15, 1.9, 2.2), M.hull, [1.25 * s, 1.0, 4.0], [-20, 0, -18 * s]);
+        P(G.cyl(0.55, 0.6, 4.2), M.dark, [1.6 * s, 0, 4.2], [90, 0, 0]);
+        P(G.cyl(0.62, 0.66, 0.3), M.accent, [1.6 * s, 0, 3.0], [90, 0, 0]);
+      }
+    } },
+  { name: 'ファルコン', cls: '迎撃機', desc: '高速で機敏な迎撃機。ブーストの持ちは短めですが、加速と最高速度に優れます。',
+    hull: 0xe9e4de, accent: 0xff4a3a, flame: 0xff9a3a, size: 1, cockpit: [0, 0.9, -3.4],
+    stats: { maxSpeed: 380, assistAccel: 210, pitchRate: 1.7, yawRate: 1.25, rollRate: 3.0, boostMul: 2.2, boostDrain: 0.3, boostRegen: 0.14 },
+    engines: [[0, 0, 5.3, 0.75]], navs: [[-4.7, -0.1, 4.0], [4.7, -0.1, 4.0]],
+    build(P, G, M) {
+      P(G.cap(0.9, 8), M.hull, [0, 0, 0], [90, 0, 0], [1.1, 1, 0.8]);
+      P(G.cone(0.9, 5), M.hull, [0, 0, -6.9], [-90, 0, 0], [1, 1, 0.8]);
+      P(G.sph(0.7), M.canopy, [0, 0.5, -3.2], [0, 0, 0], [0.8, 0.6, 2]);
+      P(G.box(0.12, 2.2, 2.4), M.hull, [0, 1.2, 3.8], [-28, 0, 0]);
+      P(G.box(0.14, 0.5, 2.2), M.accent, [0, 2.1, 4.4], [-28, 0, 0]);
+      P(G.cyl(0.8, 0.9, 1.4), M.dark, [0, 0, 4.6], [90, 0, 0]);
+      for (const s of [-1, 1]) {
+        const w = P(G.box(4.4, 0.14, 3.8), M.hull, [2.6 * s, -0.1, 2.4], [0, -35 * s, 0]);
+        P(G.box(4.4, 0.06, 0.18), M.accent, [0, 0.09, -1.8], [0, 0, 0], [1, 1, 1], w);
+        P(G.box(1.6, 0.1, 0.8), M.hull, [1.1 * s, 0, -4.4], [0, -22 * s, 0]);
+      }
+    } },
+  { name: 'ブルワーク', cls: '重装機', desc: '頑丈な大型機。動きは重いものの、ブーストの倍率と持続力が大きく、長距離の加速に強い機体です。',
+    hull: 0x8a919c, accent: 0xffc23a, flame: 0xffd04d, size: 1.35, cockpit: [0, 1.9, -3.6],
+    stats: { maxSpeed: 220, assistAccel: 110, thrustAccel: 90, pitchRate: 0.95, yawRate: 0.75, rollRate: 1.5, rotResp: 3.5, boostMul: 3.0, boostDrain: 0.12, boostRegen: 0.1 },
+    engines: [[-3.0, -0.2, 5.6, 0.65], [3.0, -0.2, 5.6, 0.65], [-1.1, 0, 6.3, 0.5], [1.1, 0, 6.3, 0.5]], navs: [[-3.9, 0.7, -1], [3.9, 0.7, -1]],
+    build(P, G, M) {
+      P(G.box(4.2, 2.2, 11), M.hull, [0, 0, 0.5]);
+      P(G.box(3.2, 1.6, 3), M.hull, [0, -0.2, -6]);
+      P(G.box(2.4, 0.7, 2.2), M.canopy, [0, 1.3, -3.5]);
+      P(G.box(4.4, 0.3, 8), M.dark, [0, 1.2, 1.8]);
+      P(G.box(3.4, 0.18, 0.3), M.accent, [0, 0.62, -7.55]);
+      for (const s of [-1, 1]) {
+        P(G.box(1.6, 1.8, 8), M.dark, [3.0 * s, -0.2, 1.5]);
+        P(G.box(0.1, 0.25, 7), M.accent, [3.85 * s, -0.2, 1.5]);
+        P(G.box(1.2, 0.3, 3), M.hull, [3.0 * s, 0.85, 0]);
+      }
+    } },
+  { name: 'ニードル', cls: 'レーサー', desc: '最高速度に特化した細長い機体。真っすぐ飛ぶのは得意ですが、曲がるのは苦手です。',
+    hull: 0xf2f4f7, accent: 0x3a7bff, flame: 0x9fd0ff, size: 1.05, cockpit: [0, 0.75, -2.2],
+    stats: { maxSpeed: 480, assistAccel: 230, thrustAccel: 160, pitchRate: 1.0, yawRate: 0.8, rollRate: 2.2, boostMul: 2.0, boostDrain: 0.25 },
+    engines: [[0, 0, 7.3, 0.8]], navs: [[-2.4, 0, 5.9], [2.4, 0, 5.9]],
+    build(P, G, M) {
+      P(G.cyl(0.8, 0.45, 14), M.hull, [0, 0, 0], [90, 0, 0]);
+      P(G.cone(0.45, 6), M.hull, [0, 0, -10], [-90, 0, 0]);
+      P(G.sph(0.5), M.canopy, [0, 0.4, -2], [0, 0, 0], [0.9, 0.8, 3.2]);
+      P(G.cyl(0.85, 0.85, 0.25), M.accent, [0, 0, 6.6], [90, 0, 0]);
+      P(G.cyl(0.62, 0.62, 0.2), M.accent, [0, 0, -3.5], [90, 0, 0]);
+      P(G.box(0.08, 1.5, 1.5), M.hull, [0, 0.95, 5.8], [-30, 0, 0]);
+      for (const s of [-1, 1]) {
+        P(G.box(2.3, 0.08, 1.2), M.hull, [1.4 * s, 0, 5.5], [0, -30 * s, 0]);
+        P(G.box(1.2, 0.06, 0.6), M.accent, [0.8 * s, 0, -6.5], [0, -30 * s, 0]);
+      }
+    } },
+  { name: 'マンタ', cls: '全翼機', desc: '平たい全翼機。旋回性能が高く、ピッチとヨーの反応が素早い機体です。',
+    hull: 0x3b3f5c, accent: 0xc45bff, flame: 0xd27aff, size: 1.1, cockpit: [0, 1.0, -2.6],
+    stats: { pitchRate: 2.0, yawRate: 1.5, rollRate: 2.4, rotResp: 6 },
+    engines: [[-1.2, 0, 4.7, 0.5], [1.2, 0, 4.7, 0.5]], navs: [[-6.4, 0.1, 3.9], [6.4, 0.1, 3.9]],
+    build(P, G, M) {
+      P(G.sph(1.6), M.hull, [0, 0.1, -0.5], [0, 0, 0], [1.2, 0.45, 3.2]);
+      P(G.sph(0.7), M.canopy, [0, 0.55, -2.6], [0, 0, 0], [0.8, 0.5, 1.8]);
+      for (const s of [-1, 1]) {
+        const w = P(G.box(7, 0.3, 4), M.hull, [3.0 * s, 0, 1.8], [0, -28 * s, 0]);
+        P(G.box(7, 0.08, 0.16), M.accent, [0, 0.16, -1.95], [0, 0, 0], [1, 1, 1], w);
+        P(G.box(5, 0.32, 1.2), M.dark, [0, -0.02, 1.0], [0, 0, 0], [1, 1, 1], w);
+        P(G.box(0.15, 1.2, 1.6), M.hull, [6.2 * s, 0.5, 3.8], [0, 0, -15 * s]);
+        P(G.cyl(0.5, 0.55, 2.2), M.dark, [1.2 * s, 0, 3.6], [90, 0, 0]);
+      }
+    } },
+  { name: 'ホーネット', cls: '格闘機', desc: '小型で4枚翼の格闘機。最高速度は控えめですが、ロールと旋回が最も鋭い機体です。',
+    hull: 0xdfe7da, accent: 0x5dff7a, flame: 0x7dffa0, size: 0.85, cockpit: [0, 0.9, -1.8],
+    stats: { maxSpeed: 260, assistAccel: 200, pitchRate: 2.3, yawRate: 1.7, rollRate: 3.6, rotResp: 7.5 },
+    engines: [[-4.1, 1.5, 3.8, 0.3], [4.1, 1.5, 3.8, 0.3], [-4.1, -1.5, 3.8, 0.3], [4.1, -1.5, 3.8, 0.3]],
+    navs: [[-4.1, 1.5, 1.2], [4.1, 1.5, 1.2]],
+    build(P, G, M) {
+      P(G.cap(0.85, 6), M.hull, [0, 0, 0.3], [90, 0, 0]);
+      P(G.cone(0.85, 3), M.hull, [0, 0, -4.6], [-90, 0, 0]);
+      P(G.sph(0.65), M.canopy, [0, 0.5, -1.8], [0, 0, 0], [0.8, 0.6, 1.6]);
+      P(G.cyl(0.88, 0.88, 0.25), M.accent, [0, 0, -2.6], [90, 0, 0]);
+      for (const s of [-1, 1]) for (const v of [-1, 1]) {
+        const w = P(G.box(4, 0.12, 1.6), M.hull, [2.2 * s, 0.75 * v, 2.2], [0, 0, 22 * s * v]);
+        P(G.box(3.6, 0.06, 0.12), M.accent, [0, 0.08, -0.75], [0, 0, 0], [1, 1, 1], w);
+        P(G.cyl(0.3, 0.35, 2.6), M.dark, [4.1 * s, 1.5 * v, 2.5], [90, 0, 0]);
+      }
+    } },
+  { name: 'ヴォイジャー', cls: '探査機', desc: 'ワープ性能に特化した探査機。充填が速く、ワープの最高速度は他の機体のほぼ2倍です。',
+    hull: 0xc9d3d6, accent: 0x2ee6c8, flame: 0x5affe0, size: 1.15, cockpit: [0, 1.5, -4.2],
+    stats: { maxSpeed: 240, pitchRate: 1.2, yawRate: 0.9, rollRate: 2.0, warpMax: 85000, warpSpool: 1.0, warpAccel: 30000 },
+    engines: [[0, 0, 5.8, 0.9]], navs: [[-3.6, 0, 1.5], [3.6, 0, 1.5]],
+    build(P, G, M) {
+      P(G.cyl(1.1, 1.1, 10), M.hull, [0, 0, 0.5], [90, 0, 0]);
+      P(G.sph(1.1), M.hull, [0, 0, -4.5]);
+      P(G.sph(0.9), M.canopy, [0, 0.35, -4.9], [0, 0, 0], [0.9, 0.7, 0.9]);
+      P(G.tor(3.2, 0.28), M.hull, [0, 0, 1.5]);
+      P(G.tor(3.2, 0.1), M.accent, [0, 0, 1.15]);
+      P(G.box(6.4, 0.22, 0.3), M.dark, [0, 0, 1.5]);
+      P(G.box(0.22, 6.4, 0.3), M.dark, [0, 0, 1.5]);
+      P(G.cyl(1.2, 1.4, 1.2), M.dark, [0, 0, 5.3], [90, 0, 0]);
+      for (const s of [-1, 1]) P(G.box(0.7, 0.7, 3.2), M.dark, [1.3 * s, 0.6, -1.2]);
+    } },
+  { name: 'ハンマーヘッド', cls: '強襲機', desc: '幅広の頭部を持つ強襲機。横方向と上下の平行移動が非常に速く、ゲートの位置合わせが得意です。',
+    hull: 0xc7cbd1, accent: 0xff7a1a, flame: 0xff9a40, size: 1.05, cockpit: [0, 1.35, -2.8],
+    stats: { maxSpeed: 280, assistAccel: 180, strafeSpeed: 230, pitchRate: 1.3, yawRate: 1.0 },
+    engines: [[-0.55, 0, 6.2, 0.5], [0.55, 0, 6.2, 0.5]], navs: [[-4.5, 0, -4.6], [4.5, 0, -4.6]],
+    build(P, G, M) {
+      P(G.box(1.8, 1.2, 10), M.hull, [0, 0, 1]);
+      P(G.box(9, 0.9, 2.4), M.hull, [0, 0, -4.6]);
+      P(G.box(9.2, 0.14, 0.2), M.accent, [0, 0.2, -5.85]);
+      P(G.box(1.2, 0.6, 1.6), M.canopy, [0, 0.85, -2.8]);
+      P(G.box(2.2, 0.5, 4), M.dark, [0, -0.7, 2.5]);
+      for (const s of [-1, 1]) {
+        P(G.box(0.12, 1.6, 2), M.hull, [0.8 * s, 0.9, 4.8], [-20, 0, -15 * s]);
+        P(G.box(1.2, 1.1, 2.0), M.dark, [3.9 * s, 0, -4.4]);
+      }
+    } },
+  { name: 'ファントム', cls: 'ステルス機', desc: '多面体の装甲を持つステルス機。ブーストの回復が非常に速く、短いブーストを何度も使えます。',
+    hull: 0x22252e, accent: 0xff3ad2, flame: 0xff5ae0, size: 1.05, cockpit: [0, 0.95, -2.5], flat: true,
+    stats: { maxSpeed: 340, boostMul: 2.6, boostDrain: 0.18, boostRegen: 0.32 },
+    engines: [[-0.9, 0, 5.6, 0.4], [0.9, 0, 5.6, 0.4]], navs: [[-5.6, -0.1, 4.6], [5.6, -0.1, 4.6]],
+    build(P, G, M) {
+      P(G.oct(1.5), M.hull, [0, 0, 0], [0, 0, 0], [1.6, 0.6, 5]);
+      P(G.oct(1), M.canopy, [0, 0.45, -2.5], [0, 0, 0], [0.6, 0.4, 1.6]);
+      for (const s of [-1, 1]) {
+        const w = P(G.box(6, 0.2, 3.5), M.hull, [3.3 * s, -0.1, 2.5], [0, -40 * s, 0]);
+        P(G.box(6, 0.06, 0.1), M.accent, [0, 0.12, -1.7], [0, 0, 0], [1, 1, 1], w);
+        P(G.box(0.12, 1.3, 1.8), M.hull, [1.6 * s, 0.6, 4.2], [-30, 0, 30 * s]);
+      }
+    } },
+  { name: 'サンダーボルト', cls: '双胴機', desc: '2本の胴体を翼でつないだ双胴機。ブーストの倍率が全機体で最大ですが、燃費は悪めです。',
+    hull: 0xe6e1cf, accent: 0xffd400, flame: 0xffe14d, size: 1.15, cockpit: [0, 1.25, -2.3],
+    stats: { maxSpeed: 310, boostMul: 3.8, boostDrain: 0.35, boostRegen: 0.1 },
+    engines: [[-2.2, 0, 5.8, 0.7], [2.2, 0, 5.8, 0.7]], navs: [[-5.9, 0, 1.4], [5.9, 0, 1.4]],
+    build(P, G, M) {
+      P(G.sph(1), M.hull, [0, 0.2, -1.5], [0, 0, 0], [1, 0.8, 2.6]);
+      P(G.sph(0.7), M.canopy, [0, 0.7, -2.2], [0, 0, 0], [0.8, 0.6, 1.6]);
+      P(G.box(6, 0.2, 2.4), M.hull, [0, 0, 0.8]);
+      P(G.box(6.2, 0.08, 0.14), M.accent, [0, 0.12, -0.4]);
+      P(G.box(5, 0.15, 1), M.hull, [0, 1.4, 5]);
+      for (const s of [-1, 1]) {
+        P(G.cap(0.8, 9), M.hull, [2.2 * s, 0, 0.5], [90, 0, 0]);
+        P(G.cone(0.8, 2.5), M.hull, [2.2 * s, 0, -5.6], [-90, 0, 0]);
+        P(G.cyl(0.84, 0.84, 0.3), M.accent, [2.2 * s, 0, -3], [90, 0, 0]);
+        P(G.box(0.12, 1.4, 1), M.hull, [2.2 * s, 0.7, 5]);
+        P(G.box(3, 0.15, 2), M.hull, [4.4 * s, 0, 1], [0, -15 * s, 0]);
+      }
+    } },
+  { name: 'ルミナ', cls: 'ヨット', desc: '曲線的な高級ヨット。全性能が少しずつ高く、平行移動とワープもそつなくこなします。',
+    hull: 0xf5f3ee, accent: 0xffc65a, flame: 0xfff0c0, size: 1.1, cockpit: [0, 1.15, -1.6],
+    stats: { maxSpeed: 320, assistAccel: 190, pitchRate: 1.6, yawRate: 1.2, rollRate: 2.6, strafeSpeed: 130, warpMax: 55000, warpSpool: 1.5 },
+    engines: [[0, 0, 6.4, 0.8], [-1.0, -0.3, 5.6, 0.35], [1.0, -0.3, 5.6, 0.35]], navs: [[-4.0, -0.6, 3.4], [4.0, -0.6, 3.4]],
+    build(P, G, M) {
+      P(G.sph(1.6), M.hull, [0, 0, 0], [0, 0, 0], [1.2, 0.7, 4.2]);
+      P(G.sph(1), M.canopy, [0, 0.62, -1.5], [0, 0, 0], [0.9, 0.5, 2.4]);
+      P(G.tor(2.1, 0.12), M.accent, [0, 0, 2.8]);
+      P(G.cyl(0.9, 1.0, 1), M.dark, [0, 0, 6], [90, 0, 0]);
+      for (const s of [-1, 1]) {
+        P(G.box(3.5, 0.15, 2.2), M.hull, [2.2 * s, -0.3, 2.6], [0, -30 * s, -10 * s]);
+        P(G.box(0.1, 0.1, 6.5), M.accent, [1.6 * s, 0.25, -0.2], [0, 6 * s, 0]);
+      }
+    } },
+];
+
+let shipIndex = 0;
+let engineBase = new THREE.Color(0x4dccff);
+function buildShip(def) {
+  for (const c of [...shipModel.children]) { shipModel.remove(c); c.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  engine.flames = []; engine.glowMats = []; engine.navs = [];
+  const std = (c, metal, rough) => new THREE.MeshStandardMaterial({ color: c, metalness: metal, roughness: rough, flatShading: !!def.flat });
+  const M = {
+    hull: std(def.hull, 0.35, 0.4), dark: std(0x1f2128, 0.5, 0.5),
+    accent: new THREE.MeshBasicMaterial({ color: def.accent }),
+    canopy: new THREE.MeshStandardMaterial({ color: 0x0a1f33, metalness: 0.8, roughness: 0.08, emissive: 0x0d3550, flatShading: !!def.flat }),
+  };
+  const P = (geo, mat, pos, rot = [0, 0, 0], scl = [1, 1, 1], parent = shipModel) => {
     const m = new THREE.Mesh(geo, mat); m.position.set(...pos); m.rotation.order = 'YXZ';
     m.rotation.set(rot[0] * Math.PI / 180, rot[1] * Math.PI / 180, rot[2] * Math.PI / 180); m.scale.set(...scl); parent.add(m); return m;
   };
-  part(new THREE.CapsuleGeometry(1.1, 7.8, 8, 16), hull, [0, 0, 0.5], [90, 0, 0], [1.3, 1, 0.65]);
-  part(new THREE.CylinderGeometry(0, 1, 4, 16), hull, [0, 0, -6.4], [-90, 0, 0], [1.2, 1, 0.55]);
-  part(new THREE.SphereGeometry(0.8, 16, 12), canopy, [0, 0.55, -3.0], [0, 0, 0], [0.8, 0.55, 2.0]);
-  for (const side of [-1, 1]) {
-    const wing = part(new THREE.BoxGeometry(5.5, 0.18, 2.6), hull, [3.4 * side, -0.1, 1.8], [0, -18 * side, -6 * side], [1, 1, 1]);
-    part(new THREE.BoxGeometry(5.0, 0.08, 0.14), accent, [0.2 * side, 0.06, -1.25], [0, 0, 0], [1, 1, 1], wing);
-    part(new THREE.BoxGeometry(4.0, 0.1, 1.6), dark, [-0.4 * side, -0.1, 0.3], [0, 0, 0], [1, 1, 1], wing);
-    part(new THREE.BoxGeometry(0.15, 1.9, 2.2), hull, [1.25 * side, 1.0, 4.0], [-20, 0, -18 * side], [1, 1, 1]);
-    part(new THREE.CylinderGeometry(0.55, 0.6, 4.2, 16), dark, [1.6 * side, 0, 4.2], [90, 0, 0], [1, 1, 1]);
-    part(new THREE.CylinderGeometry(0.62, 0.66, 0.3, 16), accent, [1.6 * side, 0, 3.0], [90, 0, 0], [1, 1, 1]);
-    const gm = new THREE.MeshBasicMaterial({ color: 0x4dccff });
-    engine.glowMats.push(gm);
-    part(new THREE.CylinderGeometry(0.45, 0.45, 0.05, 16), gm, [1.6 * side, 0, 6.32], [90, 0, 0], [1, 1, 1]);
-    // 噴射炎（外炎・内炎）
-    const flame = new THREE.Group(); flame.position.set(1.6 * side, 0, 6.35); shipModel.add(flame);
-    for (const [r, op, white] of [[0.45, 0.55, false], [0.22, 0.9, true]]) {
-      const cg = new THREE.ConeGeometry(r, 1, 14, 1, true); cg.translate(0, -0.5, 0); cg.rotateX(-Math.PI / 2);
-      const fm = new THREE.MeshBasicMaterial({ color: white ? 0xffffff : 0x4dccff, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
-      const fmesh = new THREE.Mesh(cg, fm); flame.add(fmesh);
-      if (!white) engine.glowMats.push(fm);
+  const G = {
+    box: (w, h, d) => new THREE.BoxGeometry(w, h, d), cyl: (rt, rb, h) => new THREE.CylinderGeometry(rt, rb, h, 16),
+    cap: (r, l) => new THREE.CapsuleGeometry(r, l, 8, 16), sph: (r) => new THREE.SphereGeometry(r, 18, 12),
+    cone: (r, h) => new THREE.CylinderGeometry(0, r, h, 16), tor: (R, t) => new THREE.TorusGeometry(R, t, 10, 40),
+    oct: (r) => new THREE.OctahedronGeometry(r, 0),
+  };
+  def.build(P, G, M);
+  engineBase = new THREE.Color(def.flame);
+  for (const [x, y, z, r] of def.engines) {
+    const gm = new THREE.MeshBasicMaterial({ color: def.flame }); engine.glowMats.push(gm);
+    P(G.cyl(r, r, 0.05), gm, [x, y, z - 0.03], [90, 0, 0]);
+    const flame = new THREE.Group(); flame.position.set(x, y, z); shipModel.add(flame);
+    for (const [k, op, white] of [[1, 0.55, false], [0.5, 0.9, true]]) {
+      const cg = new THREE.ConeGeometry(r * k, 1, 14, 1, true); cg.translate(0, -0.5, 0); cg.rotateX(-Math.PI / 2);
+      const fm = new THREE.MeshBasicMaterial({ color: white ? 0xffffff : def.flame, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      flame.add(new THREE.Mesh(cg, fm)); if (!white) engine.glowMats.push(fm);
     }
-    const fg = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, color: 0x4dccff, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
-    fg.position.set(1.6 * side, 0, 6.5); fg.scale.setScalar(3); shipModel.add(fg); engine.glowMats.push(fg.material);
+    const fg = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, color: def.flame, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }));
+    fg.position.set(x, y, z + 0.15); fg.scale.setScalar(r * 6.5); shipModel.add(fg); engine.glowMats.push(fg.material);
     engine.flames.push(flame);
-    const nav = new THREE.MeshBasicMaterial({ color: side < 0 ? 0xff2020 : 0x20ff40 });
-    part(new THREE.SphereGeometry(0.15, 8, 6), nav, [6.0 * side, -0.1, 2.65], [0, 0, 0], [1, 1, 1]);
-    const ns = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, color: side < 0 ? 0xff3030 : 0x30ff50, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
-    ns.position.set(6.0 * side, -0.1, 2.65); ns.scale.setScalar(2.2); shipModel.add(ns); engine.navs.push(ns.material);
   }
-  engine.light = new THREE.PointLight(0x4dccff, 1, 22, 2); engine.light.position.set(0, 0, 8); shipModel.add(engine.light);
+  def.navs.forEach(([x, y, z], i) => {
+    const c = i === 0 ? 0xff2020 : 0x20ff40;
+    P(G.sph(0.15), new THREE.MeshBasicMaterial({ color: c }), [x, y, z]);
+    const ns = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, color: c, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    ns.position.set(x, y, z); ns.scale.setScalar(2.2); shipModel.add(ns); engine.navs.push(ns.material);
+  });
+  const zMax = Math.max(...def.engines.map(e => e[2]));
+  engine.light = new THREE.PointLight(def.flame, 1, 22, 2); engine.light.position.set(0, 0, zMax + 1.7); shipModel.add(engine.light);
+  engine.col.set(def.flame);
 }
-const C_NORMAL = new THREE.Color(0x4dccff), C_BOOST = new THREE.Color(0xff8c33), C_WARP = new THREE.Color(0x9a66ff);
+
+function selectShip(i) {
+  shipIndex = (i + SHIPS.length) % SHIPS.length;
+  const def = SHIPS[shipIndex];
+  Object.assign(CFG, BASE_CFG, def.stats);
+  ship.radius = 6 * def.size;
+  buildShip(def);
+  try { localStorage.setItem('starward-ship', String(shipIndex)); } catch (_) {}
+  document.getElementById('sname').textContent = def.name;
+  document.getElementById('sclass').textContent = `${def.cls}　${shipIndex + 1} / ${SHIPS.length}`;
+  document.getElementById('sdesc').textContent = def.desc;
+  const turn = (CFG.pitchRate + CFG.yawRate + CFG.rollRate / 2) / 3;
+  const rows = [
+    ['速度', CFG.maxSpeed / 500], ['旋回', turn / 2.1], ['加速', CFG.assistAccel / 240],
+    ['ブースト', (CFG.boostMul - 1) / 3 * 0.6 + (CFG.boostRegen / CFG.boostDrain) * 0.25], ['平行移動', CFG.strafeSpeed / 240], ['ワープ', CFG.warpMax / 90000],
+  ];
+  document.getElementById('stats').innerHTML = rows.map(([l, v]) =>
+    `<div class="stat"><span>${l}</span><b><i style="width:${Math.round(clamp(v, 0.06, 1) * 100)}%"></i></b></div>`).join('');
+}
+
+// 格納庫（機体選択画面）
+const hangar = { ang: 0.6 };
+function openHangar() {
+  UI.started = false; UI.map = false; UI.help = false;
+  releaseTouches(); keys.clear();
+  if (document.exitPointerLock && document.pointerLockElement) document.exitPointerLock();
+  resetShip();
+  document.getElementById('start').hidden = false;
+}
+function updateHangarCamera(dt) {
+  hangar.ang += dt * 0.35;
+  const sz = SHIPS[shipIndex].size, d = 17 * sz;
+  camera.position.set(ship.pos.x + Math.sin(hangar.ang) * d, ship.pos.y + d * 0.28, ship.pos.z + Math.cos(hangar.ang) * d);
+  camera.up.set(0, 1, 0); camera.lookAt(ship.pos);
+  camera.fov = CFG.baseFov;
+  if (VW > VH * 1.1) camera.setViewOffset(VW, VH, -VW * 0.2, 0, VW, VH);
+  else camera.setViewOffset(VW, VH, 0, VH * 0.18, VW, VH);
+  sky.position.copy(camera.position);
+}
+
+const C_BOOST = new THREE.Color(0xff8c33), C_WARP = new THREE.Color(0x9a66ff);
 function updateEngine(dt) {
   engine.t += dt;
   const target = 0.4 + Math.max(ship.throttle, 0) * 3 + ship.boostAmt * 4 + ship.warpAmt * 10;
   engine.len = lerp(engine.len, target, damp(10, dt));
-  const tc = C_NORMAL.clone().lerp(C_BOOST, ship.boostAmt).lerp(C_WARP, ship.warpAmt);
+  const tc = engineBase.clone().lerp(C_BOOST, ship.boostAmt).lerp(C_WARP, ship.warpAmt);
   engine.col.lerp(tc, damp(6, dt));
   engine.flames.forEach((f, i) => {
     const fl = 1 + Math.sin(engine.t * 47 + i * 2) * 0.06;
@@ -596,13 +846,18 @@ function tapAction(a) {
     case 'invert_y': ship.invertY = !ship.invertY; showMsg('上下反転: ' + (ship.invertY ? 'ON' : 'OFF')); break;
     case 'help': UI.help = !UI.help; UI.map = false; break;
     case 'map': UI.map = !UI.map; UI.help = false; break;
-    case 'reset': resetShip(); resetGates(); showMsg('リスタート', 1.5); break;
+    case 'reset': openHangar(); break;
     case 'touch_ui': UI.touch = !UI.touch; releaseTouches(); if (UI.touch && document.exitPointerLock) document.exitPointerLock(); showMsg('タッチ操作: ' + (UI.touch ? 'ON' : 'OFF'), 1.5); break;
   }
 }
 const KEY_TAPS = { Tab: 'warp', KeyZ: 'flight_assist', KeyC: 'camera_mode', KeyT: 'target_next', KeyX: 'throttle_zero', KeyV: 'recenter', KeyI: 'invert_y', KeyH: 'help', Backspace: 'reset', KeyG: 'touch_ui', KeyM: 'map' };
 addEventListener('keydown', (e) => {
-  if (!UI.started) return;
+  if (!UI.started) {
+    if (document.getElementById('start').hidden) return;
+    if (e.code === 'ArrowLeft') selectShip(shipIndex - 1);
+    else if (e.code === 'ArrowRight') selectShip(shipIndex + 1);
+    return;
+  }
   if (KEY_TAPS[e.code] || KEYMAP.boost.includes(e.code) || e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
   if (!e.repeat && KEY_TAPS[e.code]) tapAction(KEY_TAPS[e.code]);
   keys.add(e.code);
@@ -733,7 +988,8 @@ function updateCamera(dt) {
   if (!cam.init) { cam.q.copy(ship.quat); cam.init = true; }
   cam.q.slerp(ship.quat, damp(CAM_SMOOTH[cam.mode], dt));
   const sr = clamp(ship.vel.length() / 750, 0, 1);
-  const off = CAM_OFF[cam.mode].clone();
+  const def = SHIPS[shipIndex];
+  const off = cam.mode === 2 ? new V3(...def.cockpit) : CAM_OFF[cam.mode].clone().multiplyScalar(def.size);
   if (cam.mode !== 2) off.z += sr * 3 + ship.boostAmt * 2;
   const pos = ship.pos.clone().add(off.applyQuaternion(cam.q));
   const s = cam.shake + (ship.warp === 1 ? 0.15 : 0) + ship.warpAmt * 0.05;
@@ -762,7 +1018,7 @@ function updateDust() {
   const c = camera.position, spd = ship.vel.length();
   const dir = spd > 1 ? ship.vel.clone().divideScalar(spd) : fwdOf(ship.quat);
   const len = clamp(spd * 0.015, 0.5, 80);
-  for (let i = 0; i < DUST_N; i++) {
+  for (let i = 0; i < dustPts.length; i++) {
     const p = dustPts[i];
     p.set(wrap(p.x - c.x, DUST_EXT) + c.x, wrap(p.y - c.y, DUST_EXT) + c.y, wrap(p.z - c.z, DUST_EXT) + c.z);
     const f = clamp(1 - p.distanceTo(c) / DUST_EXT, 0, 1) * 0.8;
@@ -1090,7 +1346,7 @@ function drawHelp() {
     '↺ ↻ : ロール   ▲ ▼ : 上下移動',
     'MAP : 星系マップ（タップで目的地）',
     'TGT : ターゲット切替  CAM : カメラ',
-    'FA : 慣性飛行切替  ↩ : リスタート',
+    'FA : 慣性飛行切替  ↩ : 格納庫へ戻る（機体変更）',
   ] : [
     '■ 操作説明 (H で閉じる)',
     'マウス : 機首の向き（クリックで開始）',
@@ -1101,7 +1357,7 @@ function drawHelp() {
     'T : ターゲット切替   Y 長押し : 自動旋回   M : 星系マップ',
     'Z : フライトアシスト   C : カメラ切替',
     'V : 照準センタリング   I : 上下反転',
-    'Backspace : リスタート   G : タッチ操作UI',
+    'Backspace : 格納庫（機体変更）   G : タッチ操作UI',
   ];
   const lh = 20 * k, w = Math.min(430 * k, VW - 32), h = lh * lines.length + 16 * k;
   const x = UI.touch ? (VW - w) / 2 : 16, y = UI.touch ? (VH - h) / 2 : 16;
@@ -1128,7 +1384,7 @@ function frame(now) {
   updateOrbits(dt);
   if (UI.started) { updateShip(dt); updateGates(dt); }
   else { shipModel.position.copy(ship.pos); shipModel.quaternion.copy(ship.quat); updateEngine(dt); }
-  updateCamera(dt);
+  if (UI.started) updateCamera(dt); else updateHangarCamera(dt);
   updateDust();
   UI.msgT = Math.max(UI.msgT - dt, 0);
   renderer.render(scene, camera);
@@ -1143,23 +1399,37 @@ function frame(now) {
     ? '<b>左ドラッグ</b> 旋回　<b>右端スライダー</b> スロットル　<b>BOOST / WARP</b> 加速・ワープ　<b>MAP</b> 星系マップ'
     : '<b>マウス</b> 旋回　<b>W/S</b> スロットル　<b>Shift</b> ブースト　<b>Tab</b> ワープ　<b>M</b> 星系マップ　<b>H</b> 操作説明';
   resize();
+  // 格納庫はテクスチャ生成中から表示しておく
+  const terra = PLANETS.find(p => p.name === 'テラノヴァ');
+  startXf.pos.set(Math.cos(terra.angle) * terra.orbit, 400, Math.sin(terra.angle) * terra.orbit + 6000);
+  let saved = 0; try { saved = parseInt(localStorage.getItem('starward-ship') || '0', 10) || 0; } catch (_) {}
+  selectShip(saved);
+  resetShip();
+  document.getElementById('prev').addEventListener('click', () => selectShip(shipIndex - 1));
+  document.getElementById('next').addEventListener('click', () => selectShip(shipIndex + 1));
+  // 機体のスワイプ切替
+  let sx0 = null;
+  const st = document.getElementById('start');
+  st.addEventListener('pointerdown', (e) => { if (e.target === st) sx0 = e.clientX; });
+  st.addEventListener('pointerup', (e) => { if (sx0 !== null && Math.abs(e.clientX - sx0) > 40) selectShip(shipIndex + (e.clientX < sx0 ? 1 : -1)); sx0 = null; });
   buildSun();
-  buildShipModel();
+  initDust(startXf.pos);
+  requestAnimationFrame(frame);
   await buildPlanets((r) => { prog.style.width = Math.round(r * 100) + '%'; });
   updateOrbits(0);
   startXf.pos.copy(findBody('テラノヴァ').node.position).add(new V3(0, 400, 6000));
   buildAsteroids(startXf.pos);
   buildGates(startXf.pos);
   resetShip(); resetGates();
-  initDust(startXf.pos);
   targetIndex = bodies.indexOf(findBody('テラノヴァ'));
   prog.style.width = '100%';
   go.disabled = false; go.textContent = '発進';
-  requestAnimationFrame(frame);
   go.addEventListener('click', () => {
     document.getElementById('start').hidden = true;
+    camera.clearViewOffset();
+    resetShip(); resetGates();
     UI.started = true; last = performance.now();
-    showMsg(UI.touch ? '右のスライダーを上げて発進' : 'W でスロットルを上げて発進（クリックでマウス操縦）', 5);
+    showMsg(`${SHIPS[shipIndex].name} 発進 — ` + (UI.touch ? '右のスライダーを上げて加速' : 'W で加速（クリックでマウス操縦）'), 4);
   });
 })();
 </script>
