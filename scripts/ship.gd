@@ -52,6 +52,7 @@ var virtual_joystick := true
 var invert_y := false
 var collision_radius := 6.0
 var aligning := false
+var touch_steer := Vector2.ZERO    ## タッチ操作の仮想スティック (-1..1)
 
 var _direct_mouse := Vector2.ZERO
 var _model: Node3D
@@ -142,6 +143,8 @@ func _read_rotation_input(dt: float) -> Vector3:
 		pitch = clampf(-m.y / maxf(dt * 60.0, 0.001), -1.0, 1.0)
 		yaw = clampf(-m.x / maxf(dt * 60.0, 0.001), -1.0, 1.0)
 
+	pitch += -touch_steer.y
+	yaw += -touch_steer.x
 	pitch += Input.get_axis("pitch_down", "pitch_up")
 	yaw += Input.get_axis("yaw_right", "yaw_left")
 	var roll := Input.get_axis("roll_right", "roll_left")

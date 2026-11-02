@@ -57,6 +57,8 @@ var _prev_gate_side := 0.0
 var ship: Node3D
 var camera: Camera3D
 var hud: Control
+var touch_ui: Control
+var touch_mode := false
 var start_xform := Transform3D.IDENTITY
 var _time := 0.0
 
@@ -73,8 +75,27 @@ func _ready() -> void:
 	_build_ship_and_camera()
 	_build_hud()
 	target_index = _find_body("テラノヴァ")
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	hud.show_message("Starward プロトタイプ — W でスロットルを上げて発進", 5.0)
+	var mobile := OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
+	set_touch_mode(mobile)
+	if touch_mode:
+		hud.show_message("Starward — 右のTHRスライダーを上げて発進", 5.0)
+	else:
+		hud.show_message("Starward プロトタイプ — W でスロットルを上げて発進", 5.0)
+
+
+## タッチ操作モードの切替（スマホでは自動でON、PCではF2で試せる）
+func set_touch_mode(on: bool) -> void:
+	touch_mode = on
+	touch_ui.visible = on
+	touch_ui.release_all()
+	hud.touch_mode = on
+	if on:
+		hud.show_help = false
+		ship.virtual_joystick = true
+		ship.steer = Vector2.ZERO
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	else:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 # ================= 入力設定 =================
@@ -105,6 +126,7 @@ func _setup_input() -> void:
 	_action("help", [KEY_H])
 	_action("reset", [KEY_BACKSPACE], [JOY_BUTTON_START])
 	_action("release_mouse", [KEY_ESCAPE])
+	_action("touch_ui", [KEY_F2])
 	var mb := InputEventMouseButton.new()
 	mb.button_index = MOUSE_BUTTON_MIDDLE
 	InputMap.action_add_event("recenter", mb)
@@ -130,9 +152,12 @@ func _action(action_name: String, keys: Array, joy_buttons: Array = [], joy_axes
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("release_mouse"):
+	if event.is_action_pressed("touch_ui"):
+		set_touch_mode(not touch_mode)
+		hud.show_message("タッチ操作: " + ("ON" if touch_mode else "OFF"), 1.5)
+	elif event.is_action_pressed("release_mouse"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	elif event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	elif not touch_mode and event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif event.is_action_pressed("camera_mode"):
 		hud.show_message(camera.cycle_mode(), 1.5)
@@ -517,6 +542,9 @@ func _build_hud() -> void:
 	hud.camera = camera
 	hud.world = self
 	layer.add_child(hud)
+	touch_ui = preload("res://scripts/touch_controls.gd").new()
+	touch_ui.ship = ship
+	layer.add_child(touch_ui)
 
 
 func _on_ship_collided(strength: float) -> void:

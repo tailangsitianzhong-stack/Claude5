@@ -12,6 +12,7 @@ var ship: Node3D
 var camera: Camera3D
 var world: Node
 var show_help := true
+var touch_mode := false
 
 var _msg := ""
 var _msg_time := 0.0
@@ -65,7 +66,7 @@ func _draw() -> void:
 	draw_line(center + Vector2(0, 5), center + Vector2(0, 12), C_MAIN, 2)
 
 	# 仮想ジョイスティック表示
-	if ship.virtual_joystick:
+	if ship.virtual_joystick and not touch_mode:
 		var r := 110.0
 		draw_arc(center, r, 0, TAU, 64, C_DIM, 1.5)
 		draw_arc(center, r * ship.mouse_deadzone, 0, TAU, 24, C_DIM, 1.0)
@@ -119,12 +120,14 @@ func _draw() -> void:
 	# メッセージ
 	if _msg_time > 0.0:
 		var a := clampf(_msg_time, 0.0, 1.0)
-		_text(Vector2(0, 90), _msg, 24, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, sz.x)
+		_text(Vector2(0, 230.0 if touch_mode else 90.0), _msg, 24, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, sz.x)
 
-	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if not touch_mode and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		_text(Vector2(0, center.y + 160), "クリックで操縦再開", 22, Color(1, 1, 1, 0.9), HORIZONTAL_ALIGNMENT_CENTER, sz.x)
 
-	if show_help:
+	if touch_mode:
+		pass
+	elif show_help:
 		_draw_help(sz)
 	else:
 		_text(Vector2(sz.x - 200, sz.y - 20), "H: 操作説明", 14, C_DIM)
@@ -165,6 +168,8 @@ func _draw_marker(world_pos: Vector3, label: String, col: Color, sz: Vector2, la
 func _draw_status_panel(sz: Vector2) -> void:
 	var x := 30.0
 	var y := sz.y - 200.0
+	if touch_mode:
+		y = 30.0
 	var spd: float = ship.velocity.length()
 	_text(Vector2(x, y), "SPEED", 14, C_DIM)
 	_text(Vector2(x, y + 34), "%d m/s" % int(spd), 32, C_MAIN)
@@ -202,10 +207,13 @@ func _draw_target_panel(sz: Vector2) -> void:
 		return
 	var x := sz.x - 330.0
 	var y := sz.y - 200.0
+	if touch_mode:
+		x = 400.0
+		y = 30.0
 	var d: float = maxf((tgt.node.global_position - ship.global_position).length() - tgt.radius, 0.0)
 	var dir: Vector3 = (tgt.node.global_position - ship.global_position).normalized()
 	var closing: float = ship.velocity.dot(dir)
-	_text(Vector2(x, y), "TARGET  (T: 切替 / Y長押し: 自動旋回)", 13, C_DIM)
+	_text(Vector2(x, y), "TARGET" if touch_mode else "TARGET  (T: 切替 / Y長押し: 自動旋回)", 13, C_DIM)
 	_text(Vector2(x, y + 30), tgt.name, 26, C_TARGET)
 	_text(Vector2(x, y + 56), "距離  " + fmt_dist(d), 16, C_MAIN)
 	var eta := "--:--"
@@ -220,6 +228,8 @@ func _draw_gate_panel(sz: Vector2) -> void:
 		return
 	var x := sz.x - 330.0
 	var y := 40.0
+	if touch_mode:
+		y = 100.0
 	_text(Vector2(x, y), "GATE COURSE", 14, C_DIM)
 	if world.gate_finished:
 		_text(Vector2(x, y + 26), "完走！ タイム %.2f 秒" % world.gate_time, 20, C_GATE)
@@ -243,6 +253,7 @@ func _draw_help(sz: Vector2) -> void:
 		"Z : フライトアシスト切替    C : カメラ切替",
 		"V / 中クリック : 照準センタリング   M : マウス方式切替",
 		"I : 上下反転    Backspace : リスタート    Esc : マウス解放",
+		"F2 : タッチ操作モード（スマホ用UIをPCで試す）",
 	]
 	var w := 560.0
 	var h := 24.0 * lines.size() + 20.0
