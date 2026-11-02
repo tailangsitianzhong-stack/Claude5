@@ -465,9 +465,14 @@ function buildAsteroids(startPos) {
   xf.forEach((m, i) => im.setMatrixAt(i, m));
   im.frustumCulled = false;
   scene.add(im);
+  astMesh = im; astMats = xf;
+  astAlive = new Uint8Array(xf.length).fill(1);
+  astHP = Float32Array.from(astRad, r => Math.max(1, r / 12));
 }
+let astMesh = null, astMats = [], astAlive = new Uint8Array(0), astHP = new Float32Array(0);
 function collideAsteroids(p, r, cb) {
   for (let i = 0; i < astPos.length; i++) {
+    if (!astAlive[i]) continue;
     const rr = astRad[i] + r;
     if (p.distanceToSquared(astPos[i]) < rr * rr) cb(astPos[i], astRad[i]);
   }
@@ -716,6 +721,23 @@ const SHIPS = [
     } },
 ];
 
+// ---------- 武装 ----------
+// type: bolt=弾 / missile=誘導弾 / beam=照射。muzzles は機体座標（-Zが前方）
+const WEAPONS = {
+  'ストライダー': { name: 'パルスレーザー', type: 'bolt', rate: 8, speed: 1600, dmg: 1, color: 0x4de6ff, len: 9, muzzles: [[-1.2, -0.3, -4], [1.2, -0.3, -4]] },
+  'ファルコン': { name: 'ラピッドレーザー', type: 'bolt', rate: 14, speed: 1800, dmg: 0.6, color: 0xff5a3a, len: 8, muzzles: [[-1.0, -0.2, -4.2], [1.0, -0.2, -4.2]] },
+  'ブルワーク': { name: 'ホーミングミサイル', type: 'missile', rate: 2.5, speed: 1300, dmg: 6, splash: 70, color: 0xffd04d, life: 4, muzzles: [[-3.0, 0.6, -2.5], [3.0, 0.6, -2.5]] },
+  'ニードル': { name: 'レールガン', type: 'bolt', rate: 1.5, speed: 5000, dmg: 8, pierce: true, color: 0xb8e0ff, len: 40, size: 1.6, life: 0.7, muzzles: [[0, -0.6, -8]] },
+  'マンタ': { name: 'ツインプラズマ', type: 'bolt', rate: 5, speed: 1200, dmg: 1.5, together: true, color: 0xd27aff, len: 6, size: 2.4, muzzles: [[-2.5, 0, -0.5], [2.5, 0, -0.5]] },
+  'ホーネット': { name: 'クアッドレーザー', type: 'bolt', rate: 16, speed: 1700, dmg: 0.6, color: 0x6dff8a, len: 7, muzzles: [[-4.1, 1.5, 1.0], [4.1, -1.5, 1.0], [4.1, 1.5, 1.0], [-4.1, -1.5, 1.0]] },
+  'ヴォイジャー': { name: '採掘ビーム', type: 'beam', dps: 6, range: 1500, color: 0x4dffe0, muzzles: [[0, -1.1, -4.5]] },
+  'ハンマーヘッド': { name: 'ワイドキャノン', type: 'bolt', rate: 3, speed: 1400, dmg: 1.5, pellets: 3, fan: 0.05, together: true, color: 0xff9a40, len: 7, size: 1.6, muzzles: [[-4.2, 0, -5.9], [4.2, 0, -5.9]] },
+  'ファントム': { name: 'バーストレーザー', type: 'bolt', rate: 2.5, burst: 4, speed: 1900, dmg: 1, color: 0xff4ad8, len: 9, muzzles: [[-1.2, -0.2, -4], [1.2, -0.2, -4]] },
+  'サンダーボルト': { name: 'スキャッターガン', type: 'bolt', rate: 2, speed: 1500, dmg: 0.8, pellets: 7, spread: 0.06, together: true, color: 0xffe14d, len: 5, size: 1.4, life: 1.0, muzzles: [[-2.2, 0, -7], [2.2, 0, -7]] },
+  'ルミナ': { name: 'ルミナランス', type: 'beam', dps: 9, range: 1800, color: 0xffd27a, muzzles: [[0, -0.6, -5.5]] },
+};
+SHIPS.forEach(d => { d.weapon = WEAPONS[d.name]; });
+
 let shipIndex = 0;
 let engineBase = new THREE.Color(0x4dccff);
 function buildShip(def) {
@@ -761,7 +783,24 @@ function buildShip(def) {
   const zMax = Math.max(...def.engines.map(e => e[2]));
   engine.light = new THREE.PointLight(def.flame, 1, 22, 2); engine.light.position.set(0, 0, zMax + 1.7); shipModel.add(engine.light);
   engine.col.set(def.flame);
+  // 発射炎とビーム
+  wfx.flashes = def.weapon.muzzles.map(([x, y, z]) => {
+    const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, color: def.weapon.color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    f.position.set(x, y, z); f.scale.setScalar(4); shipModel.add(f); return f;
+  });
+  wfx.beam = null;
+  if (def.weapon.type === 'beam') {
+    const [x, y, z] = def.weapon.muzzles[0];
+    const g = new THREE.Group(); g.position.set(x, y, z); g.visible = false; shipModel.add(g);
+    const bg = new THREE.BoxGeometry(1, 1, 1); bg.translate(0, 0, -0.5);
+    g.add(new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })));
+    const outer = new THREE.Mesh(bg, new THREE.MeshBasicMaterial({ color: def.weapon.color, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
+    outer.scale.set(3.2, 3.2, 1); g.add(outer);
+    g.children[0].scale.set(0.25, 0.25, 1);
+    wfx.beam = g;
+  }
 }
+const wfx = { flashes: [], beam: null };
 
 function selectShip(i) {
   shipIndex = (i + SHIPS.length) % SHIPS.length;
@@ -771,7 +810,7 @@ function selectShip(i) {
   buildShip(def);
   try { localStorage.setItem('starward-ship', String(shipIndex)); } catch (_) {}
   document.getElementById('sname').textContent = def.name;
-  document.getElementById('sclass').textContent = `${def.cls}　${shipIndex + 1} / ${SHIPS.length}`;
+  document.getElementById('sclass').textContent = `${def.cls} ・ ${def.weapon.name}　${shipIndex + 1} / ${SHIPS.length}`;
   document.getElementById('sdesc').textContent = def.desc;
   const turn = (CFG.pitchRate + CFG.yawRate + CFG.rollRate / 2) / 3;
   const rows = [
@@ -788,7 +827,7 @@ function openHangar() {
   UI.started = false; UI.map = false; UI.help = false;
   releaseTouches(); keys.clear();
   if (document.exitPointerLock && document.pointerLockElement) document.exitPointerLock();
-  resetShip();
+  resetShip(); clearShots();
   document.getElementById('start').hidden = false;
 }
 function updateHangarCamera(dt) {
@@ -827,7 +866,7 @@ const KEYMAP = {
   throttle_up: ['KeyW'], throttle_down: ['KeyS'], roll_left: ['KeyA'], roll_right: ['KeyD'],
   strafe_left: ['KeyQ'], strafe_right: ['KeyE'], strafe_up: ['Space'], strafe_down: ['ControlLeft', 'ControlRight'],
   pitch_up: ['ArrowUp'], pitch_down: ['ArrowDown'], yaw_left: ['ArrowLeft'], yaw_right: ['ArrowRight'],
-  boost: ['ShiftLeft', 'ShiftRight'], align: ['KeyY'],
+  boost: ['ShiftLeft', 'ShiftRight'], align: ['KeyY'], fire: ['KeyF'],
 };
 const held = (a) => (touchHeld.get(a) || 0) > 0 || (KEYMAP[a] || []).some(k => keys.has(k));
 const axis = (neg, pos) => (held(pos) ? 1 : 0) - (held(neg) ? 1 : 0);
@@ -1085,9 +1124,10 @@ function layout() {
   slider = { x: w - 16 - 44 * s, y: h * 0.3, w: 44 * s, h: h * 0.7 - 16 * s };
   const bx = slider.x - 58 * s;
   buttons = [
-    { id: 'boost', label: 'BOOST', x: bx, y: h - 50 * s, r: 36 * s, action: 'boost', hold: true },
-    { id: 'warp', label: 'WARP', x: bx, y: h - 138 * s, r: 28 * s, action: 'warp', hold: false },
-    { id: 'align', label: '自動旋回', x: bx - 82 * s, y: h - 42 * s, r: 28 * s, action: 'align', hold: true },
+    { id: 'fire', label: 'FIRE', x: bx, y: h - 52 * s, r: 38 * s, action: 'fire', hold: true },
+    { id: 'boost', label: 'BOOST', x: bx - 88 * s, y: h - 40 * s, r: 29 * s, action: 'boost', hold: true },
+    { id: 'warp', label: 'WARP', x: bx, y: h - 142 * s, r: 26 * s, action: 'warp', hold: false },
+    { id: 'align', label: '自動旋回', x: bx - 88 * s, y: h - 120 * s, r: 26 * s, action: 'align', hold: true },
     { id: 'roll_l', label: '↺', x: 16 + 26 * s, y: h - 168 * s, r: 23 * s, action: 'roll_left', hold: true },
     { id: 'roll_r', label: '↻', x: 16 + 82 * s, y: h - 168 * s, r: 23 * s, action: 'roll_right', hold: true },
     { id: 'up', label: '▲', x: 16 + 140 * s, y: h - 168 * s, r: 20 * s, action: 'strafe_up', hold: true },
@@ -1124,6 +1164,7 @@ hud.addEventListener('pointerdown', (e) => {
     mapTap(mx, my); return;
   }
   if (!UI.touch) {
+    if (document.pointerLockElement === hud) { if (e.button === 0 && !WS.mouseFire) { WS.mouseFire = true; pressHold('fire'); } return; }
     if (hud.requestPointerLock && document.pointerLockElement !== hud) { try { const r = hud.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) {} }
     return;
   }
@@ -1154,6 +1195,7 @@ hud.addEventListener('pointermove', (e) => {
   const r = hud.getBoundingClientRect(); t.x = e.clientX - r.left; t.y = e.clientY - r.top; onMove(t);
 });
 const endPointer = (e) => {
+  if (WS.mouseFire && !UI.touch) { WS.mouseFire = false; releaseHold('fire'); }
   const t = touches.get(e.pointerId); if (!t) return;
   touches.delete(e.pointerId);
   if (t.role === 'stick') { ship.touchSteer.x = ship.touchSteer.y = 0; return; }
@@ -1163,6 +1205,7 @@ hud.addEventListener('pointerup', endPointer);
 hud.addEventListener('pointercancel', endPointer);
 hud.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && WS.mouseFire) { WS.mouseFire = false; releaseHold('fire'); } });
 hud.addEventListener('wheel', (e) => { ship.throttle = clamp(ship.throttle - Math.sign(e.deltaY) * 0.05, -CFG.reverse, 1); e.preventDefault(); }, { passive: false });
 document.addEventListener('visibilitychange', () => { if (document.hidden) { keys.clear(); releaseTouches(); } });
 
@@ -1194,7 +1237,7 @@ function drawTouchUI() {
   for (const b of buttons) {
     let pressed = false; for (const t of touches.values()) if (t.role === b.id) pressed = true;
     if (b.id === 'flight_assist' && !ship.fa) pressed = true;
-    circle(b.x, b.y, b.r, pressed ? COL.active : 'rgba(2,8,18,0.35)', COL.dim);
+    circle(b.x, b.y, b.r, pressed ? (b.id === 'fire' ? 'rgba(255,90,70,0.45)' : COL.active) : 'rgba(2,8,18,0.35)', b.id === 'fire' ? COL.warn : COL.dim);
     const fs = b.label.length <= 2 ? (b.label.length === 1 ? 22 : 14) : (b.r > 30 * S ? 14 : 11);
     text(b.x, b.y + fs * S * 0.36, b.label, fs * S, COL.text, 'center');
   }
@@ -1210,6 +1253,22 @@ function drawHUD() {
   if (!UI.touch && document.pointerLockElement === hud) {
     const r = 100 * k; circle(cx, cy, r, null, COL.dim, 1.5);
     const px = cx + ship.steer.x * r, py = cy + ship.steer.y * r; line(cx, cy, px, py, COL.dim, 1.5); circle(px, py, 5, COL.main);
+  }
+  // 射撃照準（機首方向 700m 先）
+  {
+    const W = SHIPS[shipIndex].weapon;
+    const gp = project(ship.pos.clone().addScaledVector(fwdOf(ship.quat), 700));
+    if (!gp.behind) {
+      const r = 7 * k, c = W.type === 'missile' ? COL.target : 'rgba(255,120,100,0.9)';
+      ctx.beginPath(); ctx.moveTo(gp.x, gp.y - r); ctx.lineTo(gp.x + r, gp.y); ctx.lineTo(gp.x, gp.y + r); ctx.lineTo(gp.x - r, gp.y); ctx.closePath();
+      ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.stroke();
+      if (WS.hitT > 0) for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) line(gp.x + sx * 9 * k, gp.y + sy * 9 * k, gp.x + sx * 15 * k, gp.y + sy * 15 * k, 'rgba(255,255,255,0.95)', 2);
+      // ミサイルのロック候補
+      if (W.type === 'missile') {
+        const ti = pickTarget(fwdOf(ship.quat), ship.pos);
+        if (ti >= 0) { const tp = project(astPos[ti]); if (!tp.behind) { const q = 12 * k; ctx.strokeStyle = COL.target; ctx.lineWidth = 1.5; ctx.strokeRect(tp.x - q, tp.y - q, q * 2, q * 2); text(tp.x + q + 4, tp.y - q, 'LOCK', 10 * k, COL.target); } }
+      }
+    }
   }
   // 進行方向
   if (ship.vel.length() > 5) {
@@ -1243,6 +1302,7 @@ function drawHUD() {
   text(x, by3, ship.fa ? 'FA: ON' : 'FA: OFF', 12 * k, ship.fa ? COL.main : COL.warn);
   text(x + 70 * k, by3, ['WARP: 待機', 'WARP: 充填中', 'WARP: 航行中'][ship.warp], 12 * k, ship.warp ? COL.warp : COL.dim);
   if (ship.aligning) text(x + 175 * k, by3, 'AUTO-ALIGN', 12 * k, COL.target);
+  text(x, by3 + 18 * k, `${SHIPS[shipIndex].weapon.name}　撃破 ${WS.score}`, 12 * k, 'rgba(255,140,120,0.95)');
 
   // ターゲット
   const tx = top ? Math.max(16 + 260 * k, VW * 0.34) : VW - 16 - 250 * k;
@@ -1341,6 +1401,7 @@ function drawHelp() {
     '■ タッチ操作（画面タップで閉じる）',
     '左半分をドラッグ : 機首の向き',
     '右端 THR : スロットル（線より下は後退）',
+    'FIRE 長押し : 射撃（小惑星を破壊）',
     'BOOST 長押し : 加速 / WARP : ワープ',
     '自動旋回 長押し : ターゲットへ向く',
     '↺ ↻ : ロール   ▲ ▼ : 上下移動',
@@ -1353,7 +1414,7 @@ function drawHelp() {
     'W / S : スロットル   X : 0   ホイール : 微調整',
     'A / D : ロール   Q / E : 左右移動',
     'Space / Ctrl : 上下移動   矢印 : ピッチ/ヨー',
-    'Shift : ブースト   Tab : ワープ',
+    '左クリック / F : 射撃   Shift : ブースト   Tab : ワープ',
     'T : ターゲット切替   Y 長押し : 自動旋回   M : 星系マップ',
     'Z : フライトアシスト   C : カメラ切替',
     'V : 照準センタリング   I : 上下反転',
@@ -1378,12 +1439,242 @@ function resize() {
 }
 addEventListener('resize', resize);
 
+// ===================== 武装システム =====================
+const shots = [];
+const ZAXIS = new V3(0, 0, 1), ZERO_M = new THREE.Matrix4().makeScale(0, 0, 0);
+const boltGeo = new THREE.BoxGeometry(0.3, 0.3, 1);
+const missileGeo = new THREE.BoxGeometry(0.45, 0.45, 2.4);
+const matCache = {};
+const addMat = (c) => matCache[c] || (matCache[c] = new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+const glowCache = {};
+const glowMat = (c) => glowCache[c] || (glowCache[c] = new THREE.SpriteMaterial({ map: GLOW_WHITE, color: c, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+const WS = { cd: 0, muzzle: 0, burstLeft: 0, burstT: 0, score: 0, hitT: 0, sparkT: 0, mouseFire: false };
+let nearIdx = [], nearT = 0;
+
+function refreshNear() {
+  nearIdx = [];
+  for (let i = 0; i < astPos.length; i++) {
+    if (!astAlive[i]) continue;
+    const rr = 5200 + astRad[i];
+    if (ship.pos.distanceToSquared(astPos[i]) < rr * rr) nearIdx.push(i);
+  }
+}
+function restoreAsteroids() {
+  if (!astMesh) return;
+  for (let i = 0; i < astPos.length; i++) if (!astAlive[i]) { astAlive[i] = 1; astMesh.setMatrixAt(i, astMats[i]); }
+  astHP = Float32Array.from(astRad, r => Math.max(1, r / 12));
+  astMesh.instanceMatrix.needsUpdate = true;
+}
+function damageAsteroid(i, d, point, spark = true) {
+  if (!astAlive[i]) return;
+  astHP[i] -= d; WS.hitT = 0.12;
+  if (spark) spawnFlash(point, 6, 0xffd6a0, 0.18);
+  if (astHP[i] <= 0) {
+    astAlive[i] = 0; astMesh.setMatrixAt(i, ZERO_M); astMesh.instanceMatrix.needsUpdate = true;
+    explode(astPos[i], astRad[i]); WS.score++;
+    nearIdx = nearIdx.filter(j => j !== i);
+  }
+}
+function splashDamage(point, R, dmg) {
+  explode(point, R * 0.5, 0xffc060);
+  for (const i of [...nearIdx]) if (astAlive[i] && point.distanceTo(astPos[i]) < R + astRad[i]) damageAsteroid(i, dmg, point, false);
+}
+// 線分と球の交差（最初に当たる位置の割合 0..1、外れは -1）
+function segSphere(a, b, c, r) {
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, fx = a.x - c.x, fy = a.y - c.y, fz = a.z - c.z;
+  const A = dx * dx + dy * dy + dz * dz, B = 2 * (fx * dx + fy * dy + fz * dz), C = fx * fx + fy * fy + fz * fz - r * r;
+  if (C <= 0) return 0;
+  const disc = B * B - 4 * A * C; if (disc < 0 || A === 0) return -1;
+  const t = (-B - Math.sqrt(disc)) / (2 * A);
+  return t >= 0 && t <= 1 ? t : -1;
+}
+// 半直線と球（距離、外れは -1）
+function raySphere(o, d, c, r) {
+  const ox = o.x - c.x, oy = o.y - c.y, oz = o.z - c.z;
+  const b = ox * d.x + oy * d.y + oz * d.z, cc = ox * ox + oy * oy + oz * oz - r * r;
+  const disc = b * b - cc; if (disc < 0) return -1;
+  const t = -b - Math.sqrt(disc);
+  return t >= 0 ? t : (cc < 0 ? 0 : -1);
+}
+const muzzleWorld = (m) => new V3(m[0], m[1], m[2]).applyQuaternion(ship.quat).add(ship.pos);
+
+function pickTarget(dir, from) {
+  let best = -1, bestA = 0.42;
+  for (const i of nearIdx) {
+    if (!astAlive[i]) continue;
+    const v = astPos[i].clone().sub(from), d = v.length();
+    if (d > 3500 || d < 1) continue;
+    const a = Math.acos(clamp(v.dot(dir) / d, -1, 1));
+    if (a < bestA) { bestA = a; best = i; }
+  }
+  return best;
+}
+function spawnShot(W, origin, dir) {
+  let mesh;
+  if (W.type === 'missile') {
+    mesh = new THREE.Mesh(missileGeo, addMat(0xffffff));
+    const g = new THREE.Sprite(glowMat(W.color)); g.scale.setScalar(5); g.position.z = -1.6; mesh.add(g);
+  } else {
+    mesh = new THREE.Mesh(boltGeo, addMat(W.color));
+    mesh.scale.set(W.size || 1, W.size || 1, W.len || 8);
+    // 後方から見ても弾が分かるように光の玉を付ける（親の伸縮を打ち消す）
+    const g = new THREE.Sprite(glowMat(W.color)); const gs = 3.2 * (W.size || 1);
+    g.scale.set(gs / (W.size || 1), gs / (W.size || 1), 1); mesh.add(g);
+  }
+  mesh.position.copy(origin); scene.add(mesh);
+  const v0 = W.type === 'missile' ? Math.max(ship.vel.dot(dir), 0) + 250 : W.speed;
+  const vel = dir.clone().multiplyScalar(v0);
+  if (W.type !== 'missile') vel.add(ship.vel);
+  shots.push({ mesh, pos: origin.clone(), vel, life: W.life || 1.6, W, target: W.type === 'missile' ? pickTarget(dir, origin) : -1, hit: new Set() });
+}
+function fireOnce(W) {
+  const fwd = fwdOf(ship.quat), right = AX.clone().applyQuaternion(ship.quat), up = AY.clone().applyQuaternion(ship.quat);
+  const idx = W.together ? W.muzzles.map((_, i) => i) : [WS.muzzle++ % W.muzzles.length];
+  for (const mi of idx) {
+    const origin = muzzleWorld(W.muzzles[mi]);
+    if (wfx.flashes[mi]) wfx.flashes[mi].material.opacity = 1;
+    const n = W.pellets || 1;
+    for (let k = 0; k < n; k++) {
+      const dir = fwd.clone();
+      if (W.fan) dir.addScaledVector(right, (k - (n - 1) / 2) * W.fan);
+      if (W.spread) dir.addScaledVector(right, (Math.random() * 2 - 1) * W.spread).addScaledVector(up, (Math.random() * 2 - 1) * W.spread);
+      spawnShot(W, origin, dir.normalize());
+    }
+  }
+}
+function clearShots() {
+  for (const p of shots) scene.remove(p.mesh);
+  shots.length = 0;
+  if (wfx.beam) wfx.beam.visible = false;
+}
+
+function updateBeam(dt, firing, W) {
+  const g = wfx.beam; if (!g) return;
+  g.visible = firing;
+  if (!firing) return;
+  const o = muzzleWorld(W.muzzles[0]), d = fwdOf(ship.quat);
+  let len = W.range, hit = -1;
+  for (const i of nearIdx) {
+    if (!astAlive[i]) continue;
+    const t = raySphere(o, d, astPos[i], astRad[i]);
+    if (t >= 0 && t < len) { len = t; hit = i; }
+  }
+  let body = false;
+  for (const b of bodies) { const t = raySphere(o, d, b.node.position, b.radius); if (t >= 0 && t < len) { len = t; hit = -1; body = true; } }
+  const fl = 1 + Math.sin(performance.now() * 0.05) * 0.15;
+  g.scale.set(fl, fl, Math.max(len, 0.1));
+  WS.sparkT -= dt;
+  const point = o.clone().addScaledVector(d, len);
+  if (hit >= 0) {
+    damageAsteroid(hit, W.dps * dt, point, false);
+    if (WS.sparkT <= 0) { spawnFlash(point, 10, W.color, 0.2); WS.sparkT = 0.07; }
+  } else if (body && WS.sparkT <= 0) { spawnFlash(point, 14, W.color, 0.2); WS.sparkT = 0.07; }
+}
+
+function updateWeapons(dt) {
+  const W = SHIPS[shipIndex].weapon;
+  WS.cd -= dt; WS.hitT = Math.max(WS.hitT - dt, 0);
+  nearT -= dt; if (nearT <= 0) { refreshNear(); nearT = 0.2; }
+  const firing = held('fire') && ship.warp !== 2;
+  if (W.type === 'beam') updateBeam(dt, firing, W);
+  else {
+    if (firing && WS.cd <= 0) { fireOnce(W); WS.cd = 1 / W.rate; if (W.burst) { WS.burstLeft = W.burst - 1; WS.burstT = 0.06; } }
+    if (WS.burstLeft > 0) { WS.burstT -= dt; if (WS.burstT <= 0) { fireOnce(W); WS.burstLeft--; WS.burstT = 0.06; } }
+  }
+  for (const f of wfx.flashes) f.material.opacity = Math.max(f.material.opacity - dt * 14, 0);
+
+  for (let s = shots.length - 1; s >= 0; s--) {
+    const p = shots[s]; p.life -= dt;
+    if (p.W.type === 'missile') {
+      const sp = Math.min(p.vel.length() + 1100 * dt, p.W.speed);
+      const dir = p.vel.clone().normalize();
+      if (p.target >= 0 && astAlive[p.target]) dir.lerp(astPos[p.target].clone().sub(p.pos).normalize(), Math.min(1, 4.5 * dt)).normalize();
+      p.vel.copy(dir).multiplyScalar(sp);
+    }
+    const from = p.pos.clone();
+    p.pos.addScaledVector(p.vel, dt);
+    let hit = -1, ht = 2;
+    const pad = p.W.type === 'missile' ? 4 : 1;
+    for (const i of nearIdx) {
+      if (!astAlive[i] || p.hit.has(i)) continue;
+      const t = segSphere(from, p.pos, astPos[i], astRad[i] + pad);
+      if (t >= 0 && t < ht) { ht = t; hit = i; }
+    }
+    let dead = p.life <= 0;
+    if (hit >= 0) {
+      const point = from.clone().lerp(p.pos, ht);
+      if (p.W.type === 'missile') { splashDamage(point, p.W.splash, p.W.dmg); dead = true; }
+      else { damageAsteroid(hit, p.W.dmg, point); if (p.W.pierce) p.hit.add(hit); else dead = true; }
+    } else {
+      for (const b of bodies) if (p.pos.distanceToSquared(b.node.position) < b.radius * b.radius) { spawnFlash(p.pos, 12, p.W.color, 0.25); dead = true; break; }
+      if (dead && p.life <= 0 && p.W.type === 'missile') explode(p.pos, 20, 0xffc060);
+    }
+    if (dead) { scene.remove(p.mesh); shots.splice(s, 1); continue; }
+    p.mesh.position.copy(p.pos);
+    p.mesh.quaternion.setFromUnitVectors(ZAXIS, p.vel.clone().normalize());
+  }
+  updateFx(dt);
+}
+
+// ---------- 爆発・火花 ----------
+const flashPool = [], debrisPool = [];
+let flashI = 0, debrisI = 0;
+for (let i = 0; i < 40; i++) {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_WHITE, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+  sp.visible = false; scene.add(sp); flashPool.push({ sp, life: 0, max: 1, size: 1 });
+}
+for (let i = 0; i < 10; i++) {
+  const n = 24, g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  const m = new THREE.PointsMaterial({ color: 0xffb070, size: 4, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const pts = new THREE.Points(g, m); pts.frustumCulled = false; pts.visible = false; scene.add(pts);
+  debrisPool.push({ pts, vel: new Float32Array(n * 3), life: 0, max: 1 });
+}
+function spawnFlash(pos, size, color, life) {
+  const f = flashPool[flashI++ % flashPool.length];
+  f.sp.position.copy(pos); f.sp.material.color.set(color); f.sp.visible = true;
+  f.life = f.max = life; f.size = size;
+}
+function explode(pos, r, color = 0xffa050) {
+  spawnFlash(pos, r * 4 + 20, color, 0.6);
+  spawnFlash(pos, r * 2 + 10, 0xffffff, 0.25);
+  const d = debrisPool[debrisI++ % debrisPool.length];
+  const a = d.pts.geometry.attributes.position;
+  for (let i = 0; i < a.count; i++) {
+    a.setXYZ(i, pos.x, pos.y, pos.z);
+    const v = new V3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize().multiplyScalar((0.6 + Math.random()) * (r * 1.2 + 30));
+    d.vel[i * 3] = v.x; d.vel[i * 3 + 1] = v.y; d.vel[i * 3 + 2] = v.z;
+  }
+  a.needsUpdate = true;
+  d.pts.material.size = Math.max(2, r * 0.18); d.pts.material.color.set(color);
+  d.pts.visible = true; d.life = d.max = 1.4;
+  if (ship.pos.distanceTo(pos) < r * 6 + 300) cam.shake = Math.min(cam.shake + 0.25, 2.5);
+}
+function updateFx(dt) {
+  for (const f of flashPool) {
+    if (!f.visible && f.life <= 0) continue;
+    f.life -= dt;
+    if (f.life <= 0) { f.sp.visible = false; continue; }
+    const t = f.life / f.max;
+    f.sp.material.opacity = t; f.sp.scale.setScalar(f.size * (1.4 - t * 0.4));
+  }
+  for (const d of debrisPool) {
+    if (d.life <= 0) continue;
+    d.life -= dt;
+    if (d.life <= 0) { d.pts.visible = false; continue; }
+    const a = d.pts.geometry.attributes.position;
+    for (let i = 0; i < a.count; i++) a.setXYZ(i, a.getX(i) + d.vel[i * 3] * dt, a.getY(i) + d.vel[i * 3 + 1] * dt, a.getZ(i) + d.vel[i * 3 + 2] * dt);
+    a.needsUpdate = true;
+    d.pts.material.opacity = d.life / d.max;
+  }
+}
+
 let last = performance.now();
 function frame(now) {
   const dt = clamp((now - last) / 1000, 0, 0.05); last = now;
   updateOrbits(dt);
-  if (UI.started) { updateShip(dt); updateGates(dt); }
-  else { shipModel.position.copy(ship.pos); shipModel.quaternion.copy(ship.quat); updateEngine(dt); }
+  if (UI.started) { updateShip(dt); updateGates(dt); updateWeapons(dt); }
+  else { shipModel.position.copy(ship.pos); shipModel.quaternion.copy(ship.quat); updateEngine(dt); updateFx(dt); }
   if (UI.started) updateCamera(dt); else updateHangarCamera(dt);
   updateDust();
   UI.msgT = Math.max(UI.msgT - dt, 0);
@@ -1427,7 +1718,7 @@ function frame(now) {
   go.addEventListener('click', () => {
     document.getElementById('start').hidden = true;
     camera.clearViewOffset();
-    resetShip(); resetGates();
+    resetShip(); resetGates(); clearShots(); restoreAsteroids(); WS.score = 0; refreshNear();
     UI.started = true; last = performance.now();
     showMsg(`${SHIPS[shipIndex].name} 発進 — ` + (UI.touch ? '右のスライダーを上げて加速' : 'W で加速（クリックでマウス操縦）'), 4);
   });
